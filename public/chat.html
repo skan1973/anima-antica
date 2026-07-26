@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="chat.css">
+    <title>Chat Privata | ANIMA ANTICA</title>
+</head>
+<body>
+    <video id="remoteVideo" autoplay playsinline class="fullscreen" aria-label="Video remoto"></video>
+    <video id="localVideo" autoplay playsinline muted class="small-box" aria-label="La tua webcam"></video>
+
+    <div id="topBar" class="top-bar">
+        <div id="sessionLabel" class="session-label">Chat privata</div>
+        <button id="endCallBtn" class="danger-btn" type="button">Termina</button>
+    </div>
+
+    <div id="chatContainer" class="chat-container">
+        <div id="messages" class="messages" aria-live="polite"></div>
+        <div class="composer-row">
+            <input type="text" id="msgInput" maxlength="1000" placeholder="Scrivi un messaggio...">
+            <button id="sendMsgBtn" type="button">Invia</button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="chat.js"></script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+body {
+    font-family: sans-serif;
+    background: #121212;
+    color: #e0e0e0;
+    padding: 20px;
+}
+
+#log {
+    border: 1px solid #444;
+    height: 300px;
+    overflow-y: scroll;
+    padding: 15px;
+    background: #1e1e1e;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+button {
+    padding: 10px 20px;
+    cursor: pointer;
+    border: none;
+    border-radius: 5px;
+    background: #6200ea;
+    color: #fff;
+    margin-right: 10px;
+}
+
+button:hover {
+    background: #3700b3;
+}
+
+.error {
+    color: #cf6679;
+}
+
+.success {
+    color: #03dac6;
+}

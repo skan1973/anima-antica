@@ -1,0 +1,107 @@
+{
+  "allowAnonymousTelemetry": false,
+  "models": [
+    {
+      "title": "CHAT — Planner (Qwen2.5-Coder 14B)",
+      "provider": "ollama",
+      "model": "qwen2.5-coder:14b",
+      "temperature": 0.2,
+      "contextLength": 16384,
+      "functions": false,
+      "systemMessage": "Ciao Skan. Agisci come un Senior Software Engineer esperto. La tua priorità è l'eccellenza architetturale e la manutenibilità del codice. 1. Scrivi codice pulito, modulare, seguendo rigorosamente i principi SOLID e DRY. 2. Includi test unitari quando appropriato. 3. Identifica proattivamente potenziali colli di bottiglia o vulnerabilità di sicurezza. 4. Fornisci spiegazioni tecniche esaustive, dettagliate e chiare. 5. Mostra SEMPRE il codice direttamente nei blocchi Markdown all'interno della chat, senza invocare tool o funzioni esterne."
+    },
+    {
+      "title": "AUTOCOMPLETE — Qwen2.5 Coder 7B",
+      "provider": "ollama",
+      "model": "qwen2.5-coder:7b",
+      "temperature": 0.1,
+      "contextLength": 8192,
+      "functions": false,
+      "systemMessage": "Fornisci completamenti di codice concisi e corretti, privilegiando accuratezza, tipizzazione e best practice."
+    },
+    {
+      "title": "EDIT — Qwen2.5 Coder 14B",
+      "provider": "ollama",
+      "model": "qwen2.5-coder:14b",
+      "temperature": 0.25,
+      "contextLength": 16384,
+      "functions": false,
+      "systemMessage": "Ciao Skan. Esegui riscritture/analisi di testo e codice con tono tecnico chiaro; spiega le modifiche e i trade-off. Mostra sempre il codice completo nei blocchi di testo."
+    },
+    {
+      "title": "APPLY — Ops (Qwen2.5-Coder 14B)",
+      "provider": "ollama",
+      "model": "qwen2.5-coder:14b",
+      "temperature": 0.15,
+      "contextLength": 16384,
+      "functions": false,
+      "systemMessage": "Ciao Skan. Agisci come un Senior DevOps Engineer esperto. Mostra le soluzioni, le strutture di cartelle e i file di configurazione direttamente in blocchi di codice Markdown nella chat. Non invocare chiamate di sistema o tool JSON."
+    },
+    {
+      "title": "Gemini 3.1 Flash-Lite",
+      "model": "gemini-3.1-flash-lite-preview",
+      "contextLength": 1048576,
+      "apiKey": "<redacted>",
+      "provider": "gemini"
+    }
+  ],
+  "systemMessage": "L'utente che ti sta scrivendo si chiama Skan. Inizia sempre la tua prima risposta dicendo 'Ciao Skan'. Mostra sempre il codice formattato in blocchi Markdown all'interno della finestra di chat, senza invocare strumenti o funzioni esterne.",
+  "defaultModel": "CHAT — Planner (Qwen2.5-Coder 14B)",
+  "tabAutocompleteModel": {
+    "title": "AUTOCOMPLETE — Qwen2.5 Coder 7B",
+    "provider": "ollama",
+    "model": "qwen2.5-coder:7b",
+    "temperature": 0.1,
+    "contextLength": 8192
+  },
+  "embeddingsProvider": {
+    "provider": "ollama",
+    "model": "nomic-embed-text"
+  },
+  "contextProviders": [
+    {
+      "name": "codebase",
+      "params": {}
+    },
+    {
+      "name": "docs",
+      "params": {}
+    },
+    {
+      "name": "diff",
+      "params": {}
+    },
+    {
+      "name": "terminal",
+      "params": {}
+    }
+  ],
+  "tools": [],
+  "slashCommands": [
+    {
+      "name": "codebase",
+      "description": "Usa Ollama per interrogare l'intero progetto"
+    },
+    {
+      "name": "fix",
+      "description": "Chiedi a Qwen 14B di correggere errori nel codice"
+    }
+  ],
+  "customCommands": [
+    {
+      "name": "refactor",
+      "prompt": "Analizza il codice selezionato e proponi un refactoring per migliorare la leggibilità, ridurre la complessità ciclomatica e rispettare il principio DRY. Spiega il ragionamento architetturale e mostra il codice completo.",
+      "description": "Refactoring con spiegazione"
+    },
+    {
+      "name": "test",
+      "prompt": "Genera unit test esaustivi per il codice selezionato. Spiega la strategia, i casi limite e come i test migliorano la robustezza.",
+      "description": "Generazione test + strategia"
+    },
+    {
+      "name": "explain",
+      "prompt": "Spiega in profondità il blocco di codice selezionato: logica, flusso, dipendenze e implicazioni architetturali.",
+      "description": "Spiegazione tecnica approfondita"
+    }
+  ]
+}

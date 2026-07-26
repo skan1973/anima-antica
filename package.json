@@ -1,0 +1,33 @@
+{
+  "name": "anima-antica",
+  "version": "1.0.0",
+  "description": "Progetto ANIMA ANTICA",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "test:unit": "node --test tests/*.test.js",
+    "test:all": "npm run test:unit && npm run test:call",
+    "test:call": "node test-chiamata.js",
+    "test:e2e": "node scripts/test-e2e.js",
+    "audit:security": "npm audit --audit-level=moderate",
+    "atlas:check": "node scripts/utils/atlas-check.js"
+  },
+  "allowScripts": {
+    "bcrypt@6.0.0": true
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^16.4.5",
+    "envalid": "^8.2.0",
+    "express": "^4.19.2",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongodb": "^7.5.0",
+    "mongoose": "^9.8.0",
+    "peer": "^1.0.2",
+    "socket.io": "^4.7.5",
+    "socket.io-client": "^4.8.3",
+    "zod": "^4.4.3"
+  }
+}

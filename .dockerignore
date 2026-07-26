@@ -1,0 +1,16 @@
+# .dockerignore
+**/.git
+**/.git/**
+**/node_modules
+**/.env
+**/.env.*
+**/*.log
+**/npm-debug.log
+**/documenti
+**/tests
+**/test-chiamata.js
+**/debug-env.js
+**/.DS_Store
+Dockerfile
+.dockerignore
+

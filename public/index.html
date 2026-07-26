@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <title>ANIMA ANTICA</title>
+</head>
+<body class="title-epic">
+    <div class="stars-container" id="starsContainer"></div>
+    <div class="moon"></div>
+
+    <h1 id="site-title" class="rainbow-text">ANIMA ANTICA</h1>
+
+    <div class="controls">
+        <button id="authBtn" class="btn-green">Login / Registrati</button>
+        <button id="camBtn" class="btn-blue">Webcam On/Off</button>
+    </div>
+
+    <div id="loginModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+        <div class="modal-content">
+            <h2 id="loginTitle">Inserisci nickname</h2>
+            <input id="nickInput" type="text" maxlength="24" placeholder="Es. SkanTest">
+            <div class="modal-actions">
+                <button id="loginCancelBtn" class="btn-blue" type="button">Annulla</button>
+                <button id="loginSubmitBtn" class="btn-green" type="button">Entra</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="incomingCallMenu" class="incoming-call-menu hidden" role="status" aria-live="polite">
+        <div class="incoming-call-title">Chiamata in arrivo</div>
+        <div id="incomingCallText" class="incoming-call-text">Qualcuno ti sta chiamando</div>
+        <div class="incoming-call-actions">
+            <button id="acceptCallBtn" class="btn-green" type="button">Accetta</button>
+            <button id="denyCallBtn" class="btn-blue" type="button">Nega</button>
+            <button id="blockCallBtn" class="btn-danger" type="button">Blocca</button>
+        </div>
+    </div>
+
+    <div class="snapshot-section">
+        <div id="snapshotGrid" class="snapshot-grid"></div>
+    </div>
+
+    <video id="localVideo" class="capture-video" autoplay playsinline muted></video>
+    <div id="callPreviewGrid" class="call-preview-grid"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>
