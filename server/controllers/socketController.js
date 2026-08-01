@@ -251,25 +251,6 @@ const runStateWatchdog = (io) => {
   }
 };
 
-const runStateWatchdog = (io) => {
-  const now = Date.now();
-  const INACTIVITY_THRESHOLD = 180000; 
-
-  for (const nick in onlineUsers) {
-    const user = onlineUsers[nick];
-    if (user.lastSeen && (now - user.lastSeen > INACTIVITY_THRESHOLD)) {
-      writeLog('warn', 'watchdog.user_timeout', { nick });
-      const socket = io.sockets.sockets.get(user.socketID);
-      if (socket) {
-        socket.disconnect(true);
-      } else {
-        delete onlineUsers[nick];
-        broadcastUsers(io);
-      }
-    }
-  }
-};
-
 function sanitize(str) {
   if (typeof str !== 'string') return '';
   return str
@@ -632,7 +613,6 @@ module.exports = (io, options = {}) => {
       }
 
       const peerSession = activePeerSessions.get(roomId);
-      const nick = getNickBySocketId(socket.id);
       const isParticipant = Boolean(nick && peerSession?.participantNicks?.has(nick));
       if (!peerSession || !isParticipant) {
         writeLog('warn', 'socket.signal.outside_authorized_session', {
