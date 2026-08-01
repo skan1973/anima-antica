@@ -2,7 +2,7 @@ const crypto = require('node:crypto');
 const { messageSchema } = require('../schemas/messageSchema');
 
 const { callRequestSchema } = require('../schemas/callSchema');
-const { writeLog, captureError } = require('../logger');
+const { validateSocketEvent } = require('../middleware/socketValidator');
 
 const onlineUsers = {};
 const roomMembers = new Map();
