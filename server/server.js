@@ -8,6 +8,7 @@ const jwt = require('jsonwebtoken');
 const { ExpressPeerServer } = require('peer');
 const socketController = require('./controllers/socketController');
 const stateService = require('./services/stateService');
+const { validateRequest, schemas } = require('./middleware/validator');
 const { writeLog, captureError } = require('./logger');
 
 require('dotenv').config({ path: __dirname + '/.env' });
