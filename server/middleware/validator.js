@@ -1,5 +1,5 @@
 const { z } = require('zod');
-const { captureError } = require('./logger');
+const { captureError } = require('../logger');
 
 /**
  * Middleware generico per validare i dati di richiesta Express
@@ -38,3 +38,4 @@ module.exports = {
     })
   }
 };
+

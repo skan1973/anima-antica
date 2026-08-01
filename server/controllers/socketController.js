@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
+const { writeLog, captureError } = require('../logger');
 const { messageSchema } = require('../schemas/messageSchema');
-
+const { userLoginSchema } = require('../schemas/userLoginSchema');
 const { callRequestSchema } = require('../schemas/callSchema');
 const { validateSocketEvent } = require('../middleware/socketValidator');
 
@@ -11,6 +12,12 @@ const pendingIncomingCalls = new Map();
 const activePeerSessions = new Map();
 const sidToNick = new Map();
 const PEER_SESSION_TTL_MS = 120000;
+
+const updateLastSeen = (nick) => {
+  if (onlineUsers[nick]) {
+    onlineUsers[nick].lastSeen = Date.now();
+  }
+};
 
 const buildPeerId = () => {
   return `peer${crypto.randomUUID().replace(/-/g, '')}`;
@@ -225,6 +232,44 @@ const leaveRoom = (socket, io) => {
   broadcastUsers(io);
 };
 
+const runStateWatchdog = (io) => {
+  const now = Date.now();
+  const INACTIVITY_THRESHOLD = 180000; // 3 minuti di inattività
+
+  for (const nick in onlineUsers) {
+    const user = onlineUsers[nick];
+    if (user.lastSeen && (now - user.lastSeen > INACTIVITY_THRESHOLD)) {
+      writeLog('warn', 'watchdog.user_timeout', { nick });
+      const socket = io.sockets.sockets.get(user.socketID);
+      if (socket) {
+        socket.disconnect(true);
+      } else {
+        delete onlineUsers[nick];
+        broadcastUsers(io);
+      }
+    }
+  }
+};
+
+const runStateWatchdog = (io) => {
+  const now = Date.now();
+  const INACTIVITY_THRESHOLD = 180000; 
+
+  for (const nick in onlineUsers) {
+    const user = onlineUsers[nick];
+    if (user.lastSeen && (now - user.lastSeen > INACTIVITY_THRESHOLD)) {
+      writeLog('warn', 'watchdog.user_timeout', { nick });
+      const socket = io.sockets.sockets.get(user.socketID);
+      if (socket) {
+        socket.disconnect(true);
+      } else {
+        delete onlineUsers[nick];
+        broadcastUsers(io);
+      }
+    }
+  }
+};
+
 function sanitize(str) {
   if (typeof str !== 'string') return '';
   return str
@@ -239,6 +284,8 @@ module.exports = (io, options = {}) => {
   const onSocketDisconnect = typeof options.onSocketDisconnect === 'function'
     ? options.onSocketDisconnect
     : () => {};
+
+  setInterval(() => runStateWatchdog(io), 60000).unref();
 
   io.on('connection', (socket) => {
     writeLog('info', 'socket.connected', { socketId: socket.id });
@@ -293,7 +340,8 @@ module.exports = (io, options = {}) => {
           peerId,
           countryCode,
           snapshot: null,
-          snapshotAt: null
+          snapshotAt: null,
+          lastSeen: Date.now()
         };
         sidToNick.set(sid, sanitizedNick);
 
@@ -533,6 +581,8 @@ module.exports = (io, options = {}) => {
 
     socket.on('send-message', (msg) => {
       if (!isLoggedIn(socket.id) || !isSocketIdentityBound(socket)) return;
+      const nick = getNickBySocketId(socket.id);
+      updateLastSeen(nick);
       const result = messageSchema.safeParse(msg);
       if (!result.success) {
         writeLog('warn', 'socket.message.invalid_schema', {
@@ -563,6 +613,8 @@ module.exports = (io, options = {}) => {
 
     socket.on('signal', ({ roomId, signalData }) => {
       if (!isLoggedIn(socket.id) || !isSocketIdentityBound(socket)) return;
+      const nick = getNickBySocketId(socket.id);
+      updateLastSeen(nick);
       if (typeof roomId !== 'string' || !socket.rooms.has(roomId)) {
         writeLog('warn', 'socket.signal.unauthorized_room', {
           socketId: socket.id,

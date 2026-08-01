@@ -7,6 +7,7 @@ const ERROR_MONITOR_WEBHOOK_URL = typeof process.env.ERROR_MONITOR_WEBHOOK_URL =
 const ERROR_MONITOR_TIMEOUT_MS = Number.parseInt(process.env.ERROR_MONITOR_TIMEOUT_MS || '3000', 10);
 
 const SENSITIVE_KEY_PATTERN = /(password|pass|token|secret|authorization|cookie|set-cookie|api[_-]?key|mongo(uri)?|jwt|stripe|access[_-]?token|refresh[_-]?token)/i;
+const MONGO_CREDENTIAL_PATTERN = /(mongodb(?:\+srv)?:\/\/[^:]+):([^@]+)@/i;
 const BEARER_PATTERN = /(bearer\s+)[a-z0-9._~+\/-]+/gi;
 const LONG_SECRET_PATTERN = /([A-Za-z0-9_\-]{24,})/g;
 
@@ -146,3 +147,4 @@ module.exports = {
   redact,
   sanitizeString
 };
+

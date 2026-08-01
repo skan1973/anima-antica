@@ -1,37 +1,27 @@
-# Stage 1: Build
-FROM node:20-alpine AS build
-
-# Set workdir
-WORKDIR /usr/src/app
-
-# Copy package files and install dependencies
+# --- Stage 1: Build ---
+FROM node:20-alpine AS builder
+WORKDIR /app
 COPY package*.json ./
 RUN npm ci
-
-# Copy source code
 COPY . .
 
-# Stage 2: Production
-FROM node:20-alpine AS production
-
-# Set production environment
+# --- Stage 2: Runtime ---
+FROM node:20-alpine AS runner
+WORKDIR /app
 ENV NODE_ENV=production
 
-# Set workdir and user
-WORKDIR /usr/src/app
-RUN chown -R node:node /usr/src/app
+# Installiamo solo dipendenze di produzione
+COPY package*.json ./
+RUN npm ci --only=production
+
+# Copiamo i file necessari dallo stage di build
+COPY --from=builder /app/server ./server
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/ecosystem.config.js ./ecosystem.config.js
+
+# Utilizziamo l'utente node già presente in node-alpine per sicurezza
 USER node
 
-# Copy only necessary files from build stage
-COPY --from=build --chown=node:node /usr/src/app/package*.json ./
-COPY --from=build --chown=node:node /usr/src/app/node_modules ./node_modules
-COPY --from=build --chown=node:node /usr/src/app/server ./server
-COPY --from=build --chown=node:node /usr/src/app/public ./public
-COPY --from=build --chown=node:node /usr/src/app/db.js ./db.js
-COPY --from=build --chown=node:node /usr/src/app/schemas ./schemas
-
-# Expose app port
 EXPOSE 3000
-
-# Start command
 CMD ["node", "server/server.js"]
+
