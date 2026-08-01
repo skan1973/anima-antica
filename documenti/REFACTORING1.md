@@ -20,7 +20,7 @@ Questo documento definisce gli interventi tecnici necessari per portare l'archit
 
 ### Stato di Verifica
 - **State Auto-Cleanup:** Presente solo in forma parziale. Esiste un watchdog basato su `lastSeen`, ma non risulta un vero ping/pong client-server dedicato e non viene forzato un aggiornamento dello stato nel database quando l'utente diventa inattivo.
-- **Atomic Operations:** Non risulta ancora implementato un flusso atomico o transazionale per il cambio stato utente. La logica attuale è in memoria e non garantisce copertura completa contro race conditions o riavvii del processo.
+- **Atomic Operations:** Refactoring avviato. Le transizioni di stato vengono spostate verso un service dedicato con compare-and-swap e fallback transazionale, riducendo il rischio di conflitti durante chiamate simultanee.
 
 ### Cose Ancora da Fare
 1. Introdurre un ping/pong esplicito tra client e server per misurare la vitalità reale della sessione.
