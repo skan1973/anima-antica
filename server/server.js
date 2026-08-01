@@ -107,7 +107,6 @@ const parsePositiveInt = (value, fallback) => {
 };
 
 const SOCKET_DB_MONITOR_INTERVAL_MS = 1000;
-const STARTUP_CLEANUP_STALE_MS = 60000;
 
 const validateNodeEnvOrExit = (value) => {
   const envValue = typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -282,6 +281,23 @@ const revokeSocketToken = (token) => {
   }
 };
 
+let startupStateCleanupCompleted = false;
+
+const runStartupStateCleanup = async () => {
+  if (startupStateCleanupCompleted || !isDbReady()) {
+    return false;
+  }
+
+  try {
+    const result = await stateService.cleanupBusyUsersOnStartup();
+    startupStateCleanupCompleted = true;
+    writeLog('info', 'startup.state_cleanup.completed', result);
+    return true;
+  } catch (error) {
+    captureError('startup.state_cleanup.failed', error);
+    return false;
+  }
+};
 const app = express();
 app.disable('x-powered-by');
 
@@ -605,43 +621,18 @@ const monitorDbAndSocketLifecycle = () => {
     writeLog('info', 'db.available.accept_reconnect');
   }
 
+  if (dbReadyNow && !startupStateCleanupCompleted) {
+    void runStartupStateCleanup();
+  }
+
   dbWasReady = dbReadyNow;
 };
 
 setInterval(monitorDbAndSocketLifecycle, SOCKET_DB_MONITOR_INTERVAL_MS).unref();
 
-const hasActiveSessionForNickAtStartup = (nick) => {
-  void nick;
-  return false;
-};
-
-const cleanupBusyUsersAtStartup = async () => {
-  if (!isDbReady()) {
-    writeLog('warn', 'state.startup_cleanup.skipped', {
-      reason: 'db_not_ready'
-    });
-    return;
-  }
-
-  try {
-    const releasedUsers = await stateService.cleanupBusyUsersWithoutSession(
-      hasActiveSessionForNickAtStartup,
-      new Date(Date.now() - STARTUP_CLEANUP_STALE_MS)
-    );
-
-    writeLog('info', 'state.startup_cleanup.completed', {
-      strategy: 'memory-only-fallback',
-      releasedCount: releasedUsers.length,
-      releasedUsers
-    });
-  } catch (error) {
-    captureError('state.startup_cleanup.failed', error);
-  }
-};
-
 const bootstrapServer = async () => {
   await connectDB();
-  await cleanupBusyUsersAtStartup();
+  await runStartupStateCleanup();
 
   server.listen(port, () => {
     writeLog('info', 'server.started', {
@@ -652,5 +643,6 @@ const bootstrapServer = async () => {
   });
 };
 
-void bootstrapServer();
-
+void bootstrapServer().catch((error) => {
+  captureError('startup.db.bootstrap.failed', error);
+});
