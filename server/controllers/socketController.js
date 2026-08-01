@@ -732,12 +732,7 @@ module.exports = (io, options = {}) => {
       }
 
       const peerSession = activePeerSessions.get(roomId);
-<<<<<<< HEAD
-      const currentNick = getNickBySocketId(socket.id);
-      const isParticipant = Boolean(currentNick && peerSession?.participantNicks?.has(currentNick));
-=======
       const isParticipant = Boolean(nick && peerSession?.participantNicks?.has(nick));
->>>>>>> 252fc3b3a0cb7cee630cba457c2ad1628d0ed08a
       if (!peerSession || !isParticipant) {
         writeLog('warn', 'socket.signal.outside_authorized_session', {
           socketId: socket.id,
