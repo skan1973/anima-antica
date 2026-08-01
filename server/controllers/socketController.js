@@ -330,6 +330,9 @@ module.exports = (io, options = {}) => {
   const onSocketDisconnect = typeof options.onSocketDisconnect === 'function'
     ? options.onSocketDisconnect
     : () => {};
+  const handleReconnectState = typeof options.handleReconnectState === 'function'
+    ? options.handleReconnectState
+    : ({ nick }) => stateService.restoreUserStateAfterReconnect({ nick, activeSessions: activePeerSessions });
 
   setInterval(() => runStateWatchdog(io), HEARTBEAT_WATCHDOG_INTERVAL_MS).unref();
 
@@ -380,6 +383,8 @@ module.exports = (io, options = {}) => {
       }
 
       try {
+        await handleReconnectState({ nick: sanitizedNick });
+
         socket.userId = 'user-' + Date.now() + Math.random();
         const peerId = buildPeerId(socket.id);
 
@@ -395,19 +400,11 @@ module.exports = (io, options = {}) => {
           return;
         }
 
-        const reconcileResult = await stateService.reconcileUserOnReconnect(
-          sanitizedNick,
-          hasActiveCallSessionForNick(sanitizedNick)
-        );
-
-        if (!reconcileResult.ok && reconcileResult.code !== 'USER_NOT_FOUND') {
-          socket.emit('login-error', 'Impossibile riallineare lo stato utente.');
-          return;
-        }
+        const reconnectResult = await handleReconnectState({ nick: sanitizedNick });
 
         onlineUsers[sanitizedNick] = {
           socketID: socket.id,
-          status: reconcileResult.user?.status || stateService.STATUS_FREE,
+          status: reconnectResult.user?.status || stateService.STATUS_FREE,
           peerId,
           countryCode,
           snapshot: null,
@@ -418,7 +415,7 @@ module.exports = (io, options = {}) => {
 
         await persistLastSeen(sanitizedNick);
 
-        if (reconcileResult.code === 'RELEASED_STALE_BUSY') {
+        if (reconnectResult.reason === 'RECOVERED_TO_FREE') {
           writeLog('info', 'state.reconnect.released_stale_busy', {
             nick: sanitizedNick,
             socketId: socket.id
@@ -431,6 +428,10 @@ module.exports = (io, options = {}) => {
 
         broadcastUsers(io);
       } catch (err) {
+        if (err?.code === 'RECONNECT_IN_PROGRESS') {
+          socket.emit('login-error', 'Riconnessione già in corso per questo utente.');
+          return;
+        }
         captureError('socket.login.error', err, { socketId: socket.id });
         socket.emit('login-error', 'Errore interno del server.');
       }
@@ -731,7 +732,6 @@ module.exports = (io, options = {}) => {
       }
 
       const peerSession = activePeerSessions.get(roomId);
-      const nick = getNickBySocketId(socket.id);
       const isParticipant = Boolean(nick && peerSession?.participantNicks?.has(nick));
       if (!peerSession || !isParticipant) {
         writeLog('warn', 'socket.signal.outside_authorized_session', {
@@ -779,4 +779,3 @@ module.exports = (io, options = {}) => {
     });
   });
 };
-
