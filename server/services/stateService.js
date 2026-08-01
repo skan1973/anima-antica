@@ -4,6 +4,14 @@ const { User } = require('../db');
 const STATUS_FREE = 'libero';
 const STATUS_BUSY = 'occupato';
 
+async function getUserByNick(nick, options = {}) {
+  return User.findOne(
+    { nick },
+    null,
+    { session: options.session }
+  );
+}
+
 async function reserveUser(nick, options = {}) {
   return User.findOneAndUpdate(
     { nick, status: STATUS_FREE },
@@ -76,10 +84,51 @@ async function reserveUsers(nick1, nick2) {
   }
 }
 
+async function reconcileUserOnReconnect(nick, hasActiveSession) {
+  const user = await getUserByNick(nick);
+  if (!user) {
+    return { ok: false, code: 'USER_NOT_FOUND' };
+  }
+
+  if (user.status === STATUS_BUSY && !hasActiveSession) {
+    const released = await releaseUser(nick);
+    return {
+      ok: true,
+      code: 'RELEASED_STALE_BUSY',
+      user: released || { ...user.toObject(), status: STATUS_FREE }
+    };
+  }
+
+  return {
+    ok: true,
+    code: 'UNCHANGED',
+    user
+  };
+}
+
+async function cleanupBusyUsersWithoutSession(hasActiveSession) {
+  const busyUsers = await User.find({ status: STATUS_BUSY });
+  const released = [];
+
+  for (const user of busyUsers) {
+    if (!hasActiveSession(user.nick)) {
+      const result = await releaseUser(user.nick);
+      if (result) {
+        released.push(user.nick);
+      }
+    }
+  }
+
+  return released;
+}
+
 module.exports = {
+  getUserByNick,
   reserveUser,
   releaseUser,
   reserveUsers,
+  reconcileUserOnReconnect,
+  cleanupBusyUsersWithoutSession,
   STATUS_FREE,
   STATUS_BUSY
 };

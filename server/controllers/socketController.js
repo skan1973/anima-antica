@@ -101,6 +101,18 @@ const blockCallerForTarget = (targetNick, callerNick) => {
 
 const isLoggedIn = (socketId) => Boolean(getNickBySocketId(socketId));
 
+const hasActiveCallSessionForNick = (nick) => {
+  if (!nick) return false;
+
+  for (const session of activePeerSessions.values()) {
+    if (session.participantNicks.has(nick)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 const getSocketSid = (socket) => {
   return typeof socket?.data?.auth?.sid === 'string' ? socket.data.auth.sid : '';
 };
@@ -383,9 +395,19 @@ module.exports = (io, options = {}) => {
           return;
         }
 
+        const reconcileResult = await stateService.reconcileUserOnReconnect(
+          sanitizedNick,
+          hasActiveCallSessionForNick(sanitizedNick)
+        );
+
+        if (!reconcileResult.ok && reconcileResult.code !== 'USER_NOT_FOUND') {
+          socket.emit('login-error', 'Impossibile riallineare lo stato utente.');
+          return;
+        }
+
         onlineUsers[sanitizedNick] = {
           socketID: socket.id,
-          status: 'libero',
+          status: reconcileResult.user?.status || stateService.STATUS_FREE,
           peerId,
           countryCode,
           snapshot: null,
@@ -395,6 +417,13 @@ module.exports = (io, options = {}) => {
         sidToNick.set(sid, sanitizedNick);
 
         await persistLastSeen(sanitizedNick);
+
+        if (reconcileResult.code === 'RELEASED_STALE_BUSY') {
+          writeLog('info', 'state.reconnect.released_stale_busy', {
+            nick: sanitizedNick,
+            socketId: socket.id
+          });
+        }
 
         socket.emit('login-success', {
           peerId

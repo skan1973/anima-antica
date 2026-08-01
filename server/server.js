@@ -7,6 +7,7 @@ const helmet = require('helmet');
 const jwt = require('jsonwebtoken');
 const { ExpressPeerServer } = require('peer');
 const socketController = require('./controllers/socketController');
+const stateService = require('./services/stateService');
 const { writeLog, captureError } = require('./logger');
 
 require('dotenv').config({ path: __dirname + '/.env' });
@@ -105,6 +106,7 @@ const parsePositiveInt = (value, fallback) => {
 };
 
 const SOCKET_DB_MONITOR_INTERVAL_MS = 1000;
+const STARTUP_CLEANUP_STALE_MS = 60000;
 
 const validateNodeEnvOrExit = (value) => {
   const envValue = typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -278,8 +280,6 @@ const revokeSocketToken = (token) => {
     return { revoked: false };
   }
 };
-
-connectDB();
 
 const app = express();
 app.disable('x-powered-by');
@@ -609,11 +609,47 @@ const monitorDbAndSocketLifecycle = () => {
 
 setInterval(monitorDbAndSocketLifecycle, SOCKET_DB_MONITOR_INTERVAL_MS).unref();
 
-server.listen(port, () => {
-  writeLog('info', 'server.started', {
-    port,
-    nodeEnv,
-    monitorWebhookConfigured: Boolean(process.env.ERROR_MONITOR_WEBHOOK_URL)
+const hasActiveSessionForNickAtStartup = (nick) => {
+  void nick;
+  return false;
+};
+
+const cleanupBusyUsersAtStartup = async () => {
+  if (!isDbReady()) {
+    writeLog('warn', 'state.startup_cleanup.skipped', {
+      reason: 'db_not_ready'
+    });
+    return;
+  }
+
+  try {
+    const releasedUsers = await stateService.cleanupBusyUsersWithoutSession(
+      hasActiveSessionForNickAtStartup,
+      new Date(Date.now() - STARTUP_CLEANUP_STALE_MS)
+    );
+
+    writeLog('info', 'state.startup_cleanup.completed', {
+      strategy: 'memory-only-fallback',
+      releasedCount: releasedUsers.length,
+      releasedUsers
+    });
+  } catch (error) {
+    captureError('state.startup_cleanup.failed', error);
+  }
+};
+
+const bootstrapServer = async () => {
+  await connectDB();
+  await cleanupBusyUsersAtStartup();
+
+  server.listen(port, () => {
+    writeLog('info', 'server.started', {
+      port,
+      nodeEnv,
+      monitorWebhookConfigured: Boolean(process.env.ERROR_MONITOR_WEBHOOK_URL)
+    });
   });
-});
+};
+
+void bootstrapServer();
 

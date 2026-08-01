@@ -104,3 +104,57 @@ test('simultaneous reservations on the same callee produce one winner and one co
   assert.equal(busyCallers.length, 1);
   assert.equal(freeCallers.length, 1);
 });
+
+test('reconcileUserOnReconnect releases stale busy user without active session', async (t) => {
+  const originalFindOne = User.findOne;
+  const originalFindOneAndUpdate = User.findOneAndUpdate;
+
+  t.after(() => {
+    User.findOne = originalFindOne;
+    User.findOneAndUpdate = originalFindOneAndUpdate;
+  });
+
+  User.findOne = async () => ({
+    nick: 'ghost',
+    status: 'occupato',
+    toObject() {
+      return { nick: 'ghost', status: 'occupato' };
+    }
+  });
+
+  User.findOneAndUpdate = async (query, update) => ({
+    nick: query.nick,
+    status: update.$set.status
+  });
+
+  const result = await stateService.reconcileUserOnReconnect('ghost', false);
+  assert.equal(result.ok, true);
+  assert.equal(result.code, 'RELEASED_STALE_BUSY');
+  assert.equal(result.user.status, 'libero');
+});
+
+test('cleanupBusyUsersWithoutSession releases only stale busy users at startup', async (t) => {
+  const originalFind = User.find;
+  const originalFindOneAndUpdate = User.findOneAndUpdate;
+
+  t.after(() => {
+    User.find = originalFind;
+    User.findOneAndUpdate = originalFindOneAndUpdate;
+  });
+
+  User.find = async () => ([
+    { nick: 'busy1', status: 'occupato' },
+    { nick: 'busy2', status: 'occupato' }
+  ]);
+
+  User.findOneAndUpdate = async (query, update) => ({
+    nick: query.nick,
+    status: update.$set.status
+  });
+
+  const released = await stateService.cleanupBusyUsersWithoutSession(
+    (nick) => nick === 'busy2'
+  );
+
+  assert.deepEqual(released, ['busy1']);
+});
