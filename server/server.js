@@ -7,6 +7,7 @@ const helmet = require('helmet');
 const jwt = require('jsonwebtoken');
 const { ExpressPeerServer } = require('peer');
 const socketController = require('./controllers/socketController');
+const { cleanupBusyUsersOnStartup } = require('./services/stateService');
 const { writeLog, captureError } = require('./logger');
 
 require('dotenv').config({ path: __dirname + '/.env' });
@@ -279,7 +280,29 @@ const revokeSocketToken = (token) => {
   }
 };
 
-connectDB();
+let startupStateCleanupCompleted = false;
+
+const runStartupStateCleanup = async () => {
+  if (startupStateCleanupCompleted || !isDbReady()) {
+    return false;
+  }
+
+  try {
+    const result = await cleanupBusyUsersOnStartup();
+    startupStateCleanupCompleted = true;
+    writeLog('info', 'startup.state_cleanup.completed', result);
+    return true;
+  } catch (error) {
+    captureError('startup.state_cleanup.failed', error);
+    return false;
+  }
+};
+
+connectDB()
+  .then(() => runStartupStateCleanup())
+  .catch((error) => {
+    captureError('startup.db.bootstrap.failed', error);
+  });
 
 const app = express();
 app.disable('x-powered-by');
@@ -604,6 +627,10 @@ const monitorDbAndSocketLifecycle = () => {
     writeLog('info', 'db.available.accept_reconnect');
   }
 
+  if (dbReadyNow && !startupStateCleanupCompleted) {
+    void runStartupStateCleanup();
+  }
+
   dbWasReady = dbReadyNow;
 };
 
@@ -616,4 +643,3 @@ server.listen(port, () => {
     monitorWebhookConfigured: Boolean(process.env.ERROR_MONITOR_WEBHOOK_URL)
   });
 });
-

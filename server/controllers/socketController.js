@@ -4,6 +4,7 @@ const { messageSchema } = require('../schemas/messageSchema');
 const { userLoginSchema } = require('../schemas/userLoginSchema');
 const { callRequestSchema } = require('../schemas/callSchema');
 const { validateSocketEvent } = require('../middleware/socketValidator');
+const { restoreUserStateAfterReconnect } = require('../services/stateService');
 
 const onlineUsers = {};
 const roomMembers = new Map();
@@ -251,25 +252,6 @@ const runStateWatchdog = (io) => {
   }
 };
 
-const runStateWatchdog = (io) => {
-  const now = Date.now();
-  const INACTIVITY_THRESHOLD = 180000; 
-
-  for (const nick in onlineUsers) {
-    const user = onlineUsers[nick];
-    if (user.lastSeen && (now - user.lastSeen > INACTIVITY_THRESHOLD)) {
-      writeLog('warn', 'watchdog.user_timeout', { nick });
-      const socket = io.sockets.sockets.get(user.socketID);
-      if (socket) {
-        socket.disconnect(true);
-      } else {
-        delete onlineUsers[nick];
-        broadcastUsers(io);
-      }
-    }
-  }
-};
-
 function sanitize(str) {
   if (typeof str !== 'string') return '';
   return str
@@ -284,6 +266,9 @@ module.exports = (io, options = {}) => {
   const onSocketDisconnect = typeof options.onSocketDisconnect === 'function'
     ? options.onSocketDisconnect
     : () => {};
+  const handleReconnectState = typeof options.handleReconnectState === 'function'
+    ? options.handleReconnectState
+    : ({ nick }) => restoreUserStateAfterReconnect({ nick, activeSessions: activePeerSessions });
 
   setInterval(() => runStateWatchdog(io), 60000).unref();
 
@@ -319,6 +304,8 @@ module.exports = (io, options = {}) => {
       }
 
       try {
+        await handleReconnectState({ nick: sanitizedNick });
+
         socket.userId = 'user-' + Date.now() + Math.random();
         const peerId = buildPeerId(socket.id);
 
@@ -351,6 +338,10 @@ module.exports = (io, options = {}) => {
 
         broadcastUsers(io);
       } catch (err) {
+        if (err?.code === 'RECONNECT_IN_PROGRESS') {
+          socket.emit('login-error', 'Riconnessione già in corso per questo utente.');
+          return;
+        }
         captureError('socket.login.error', err, { socketId: socket.id });
         socket.emit('login-error', 'Errore interno del server.');
       }
@@ -632,7 +623,6 @@ module.exports = (io, options = {}) => {
       }
 
       const peerSession = activePeerSessions.get(roomId);
-      const nick = getNickBySocketId(socket.id);
       const isParticipant = Boolean(nick && peerSession?.participantNicks?.has(nick));
       if (!peerSession || !isParticipant) {
         writeLog('warn', 'socket.signal.outside_authorized_session', {
@@ -680,4 +670,3 @@ module.exports = (io, options = {}) => {
     });
   });
 };
-

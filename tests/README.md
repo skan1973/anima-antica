@@ -6,12 +6,15 @@ Questa cartella contiene test unitari isolati dai flussi end-to-end.
 
 - `banService.test.js`: validazione input IP/durata e chiamate al modello `Ban` con payload/opzioni attese.
 - `schemas.test.js`: validazione schema Zod per messaggi e login utente.
+- `stateRecovery.test.js`: recupero stato su riconnessione, cleanup stato all'avvio e race condition su riconnessioni simultanee.
 
 ## Esecuzione
 
 ```bash
 npm run test:unit
 ```
+
+I test di recupero stato simulano gli scenari in modo deterministico senza attese reali di 5 secondi, verificando direttamente le transizioni di stato e la gestione atomica delle riconnessioni.
 
 Per eseguire unit + smoke call test:
 
