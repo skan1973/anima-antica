@@ -1,10 +1,11 @@
 const crypto = require('node:crypto');
 const { writeLog, captureError } = require('../logger');
+const { User } = require('../db');
+const stateService = require('../services/stateService');
 const { messageSchema } = require('../schemas/messageSchema');
 const { userLoginSchema } = require('../schemas/userLoginSchema');
 const { callRequestSchema } = require('../schemas/callSchema');
 const { validateSocketEvent } = require('../middleware/socketValidator');
-const { restoreUserStateAfterReconnect } = require('../services/stateService');
 
 const onlineUsers = {};
 const roomMembers = new Map();
@@ -13,10 +14,51 @@ const pendingIncomingCalls = new Map();
 const activePeerSessions = new Map();
 const sidToNick = new Map();
 const PEER_SESSION_TTL_MS = 120000;
+const HEARTBEAT_TIMEOUT_MS = 60000;
+const HEARTBEAT_WATCHDOG_INTERVAL_MS = 15000;
 
 const updateLastSeen = (nick) => {
   if (onlineUsers[nick]) {
     onlineUsers[nick].lastSeen = Date.now();
+  }
+};
+
+const setOnlineUserStatus = (nick, status) => {
+  if (nick && onlineUsers[nick]) {
+    onlineUsers[nick].status = status;
+  }
+};
+
+const releaseUsersForSession = async (participantNicks) => {
+  const uniqueNicks = Array.from(new Set((participantNicks || []).filter(Boolean)));
+
+  await Promise.all(uniqueNicks.map(async (nick) => {
+    try {
+      await stateService.releaseUser(nick);
+    } catch (error) {
+      captureError('state.release_user_failed', error, { nick });
+    }
+  }));
+
+  uniqueNicks.forEach((nick) => setOnlineUserStatus(nick, stateService.STATUS_FREE));
+};
+
+const persistLastSeen = async (nick, heartbeatAt = Date.now()) => {
+  const timestamp = Number.isFinite(heartbeatAt) ? heartbeatAt : Date.now();
+  const lastSeen = new Date(timestamp);
+
+  if (!nick || Number.isNaN(lastSeen.getTime())) {
+    return false;
+  }
+
+  updateLastSeen(nick);
+
+  try {
+    await User.updateOne({ nick }, { $set: { lastSeen } });
+    return true;
+  } catch (error) {
+    captureError('watchdog.last_seen.update_failed', error, { nick });
+    return false;
   }
 };
 
@@ -58,6 +100,18 @@ const blockCallerForTarget = (targetNick, callerNick) => {
 };
 
 const isLoggedIn = (socketId) => Boolean(getNickBySocketId(socketId));
+
+const hasActiveCallSessionForNick = (nick) => {
+  if (!nick) return false;
+
+  for (const session of activePeerSessions.values()) {
+    if (session.participantNicks.has(nick)) {
+      return true;
+    }
+  }
+
+  return false;
+};
 
 const getSocketSid = (socket) => {
   return typeof socket?.data?.auth?.sid === 'string' ? socket.data.auth.sid : '';
@@ -192,7 +246,7 @@ const canSocketOperateRoom = (socket, roomId) => {
   return isSocketInAuthorizedRoom(socket, roomId);
 };
 
-const leaveRoom = (socket, io) => {
+const leaveRoom = async (socket, io) => {
   if (!socket.roomId) return;
 
   const roomId = socket.roomId;
@@ -209,9 +263,7 @@ const leaveRoom = (socket, io) => {
 
   const session = activePeerSessions.get(roomId);
   if (session) {
-    for (const nick of session.participantNicks) {
-      if (onlineUsers[nick]) onlineUsers[nick].status = 'libero';
-    }
+    await releaseUsersForSession(Array.from(session.participantNicks));
   }
 
   const participants = roomMembers.get(roomId);
@@ -233,15 +285,27 @@ const leaveRoom = (socket, io) => {
   broadcastUsers(io);
 };
 
-const runStateWatchdog = (io) => {
+const runStateWatchdog = async (io) => {
   const now = Date.now();
-  const INACTIVITY_THRESHOLD = 180000; // 3 minuti di inattività
+  const INACTIVITY_THRESHOLD = HEARTBEAT_TIMEOUT_MS;
 
   for (const nick in onlineUsers) {
     const user = onlineUsers[nick];
     if (user.lastSeen && (now - user.lastSeen > INACTIVITY_THRESHOLD)) {
       writeLog('warn', 'watchdog.user_timeout', { nick });
       const socket = io.sockets.sockets.get(user.socketID);
+      const roomId = socket?.roomId;
+      const session = roomId ? activePeerSessions.get(roomId) : null;
+      const participantNicks = session ? Array.from(session.participantNicks) : [nick];
+
+      await releaseUsersForSession(participantNicks);
+
+      if (session && roomId) {
+        socket.to(roomId).emit('call-ended', 'La chiamata è terminata per inattività.');
+        roomMembers.delete(roomId);
+        deletePeerSession(roomId);
+      }
+
       if (socket) {
         socket.disconnect(true);
       } else {
@@ -268,12 +332,27 @@ module.exports = (io, options = {}) => {
     : () => {};
   const handleReconnectState = typeof options.handleReconnectState === 'function'
     ? options.handleReconnectState
-    : ({ nick }) => restoreUserStateAfterReconnect({ nick, activeSessions: activePeerSessions });
+    : ({ nick }) => stateService.restoreUserStateAfterReconnect({ nick, activeSessions: activePeerSessions });
 
-  setInterval(() => runStateWatchdog(io), 60000).unref();
+  setInterval(() => runStateWatchdog(io), HEARTBEAT_WATCHDOG_INTERVAL_MS).unref();
 
   io.on('connection', (socket) => {
     writeLog('info', 'socket.connected', { socketId: socket.id });
+
+    socket.on('ping', async () => {
+      if (!isLoggedIn(socket.id) || !isSocketIdentityBound(socket)) return;
+
+      const nick = getNickBySocketId(socket.id);
+      const heartbeatAt = Date.now();
+      if (nick) {
+        await persistLastSeen(nick, heartbeatAt);
+      }
+
+      socket.emit('pong', {
+        ok: true,
+        lastHeartbeatAt: heartbeatAt
+      });
+    });
 
     socket.on('user_login', async (payload) => {
       const normalizedPayload = typeof payload === 'string' ? { nick: payload } : payload;
@@ -321,9 +400,11 @@ module.exports = (io, options = {}) => {
           return;
         }
 
+        const reconnectResult = await handleReconnectState({ nick: sanitizedNick });
+
         onlineUsers[sanitizedNick] = {
           socketID: socket.id,
-          status: 'libero',
+          status: reconnectResult.user?.status || stateService.STATUS_FREE,
           peerId,
           countryCode,
           snapshot: null,
@@ -331,6 +412,15 @@ module.exports = (io, options = {}) => {
           lastSeen: Date.now()
         };
         sidToNick.set(sid, sanitizedNick);
+
+        await persistLastSeen(sanitizedNick);
+
+        if (reconnectResult.reason === 'RECOVERED_TO_FREE') {
+          writeLog('info', 'state.reconnect.released_stale_busy', {
+            nick: sanitizedNick,
+            socketId: socket.id
+          });
+        }
 
         socket.emit('login-success', {
           peerId
@@ -347,7 +437,9 @@ module.exports = (io, options = {}) => {
       }
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
+      const roomIdBeforeDetach = socket.roomId;
+      const sessionBeforeDetach = roomIdBeforeDetach ? activePeerSessions.get(roomIdBeforeDetach) : null;
       detachSocketFromSession(socket);
       const nick = getNickBySocketId(socket.id);
       const sid = getSocketSid(socket);
@@ -355,6 +447,18 @@ module.exports = (io, options = {}) => {
       pendingIncomingCalls.forEach((callerSocketId, calleeSocketId) => {
         if (callerSocketId === socket.id) pendingIncomingCalls.delete(calleeSocketId);
       });
+
+      if (sessionBeforeDetach?.participantNicks) {
+        await releaseUsersForSession(Array.from(sessionBeforeDetach.participantNicks));
+        if (roomIdBeforeDetach) {
+          socket.to(roomIdBeforeDetach).emit('call-ended', 'La chiamata è terminata.');
+          roomMembers.delete(roomIdBeforeDetach);
+          deletePeerSession(roomIdBeforeDetach);
+        }
+      } else if (nick) {
+        await releaseUsersForSession([nick]);
+      }
+
       if (nick) {
         delete onlineUsers[nick];
         blockedCallersByNick.delete(nick);
@@ -405,7 +509,7 @@ module.exports = (io, options = {}) => {
       pendingIncomingCalls.set(target.socketID, socket.id);
     });
 
-    socket.on('accept-call', ({ callerSocketId }) => {
+    socket.on('accept-call', async ({ callerSocketId }) => {
       if (!callerSocketId || !isLoggedIn(socket.id) || !isSocketIdentityBound(socket)) return;
 
       if (pendingIncomingCalls.get(socket.id) !== callerSocketId) {
@@ -421,10 +525,6 @@ module.exports = (io, options = {}) => {
         return;
       }
 
-      const roomId = `room-${crypto.randomUUID()}`;
-      const peerSession = createPeerSession(roomId, [callerNick, receiverNick]);
-      attachSocketToSession(socket, roomId, receiverNick);
-
       const callerSocket = io.sockets.sockets.get(callerSocketId);
       if (!callerSocket) return;
 
@@ -433,10 +533,21 @@ module.exports = (io, options = {}) => {
         return;
       }
 
+      const reservation = await stateService.reserveUsers(callerNick, receiverNick);
+      if (!reservation.ok) {
+        socket.emit('call-feedback', 'Utente occupato o richiesta in conflitto.');
+        io.to(callerSocketId).emit('call-feedback', 'Utente occupato o richiesta in conflitto.');
+        return;
+      }
+
+      const roomId = `room-${crypto.randomUUID()}`;
+      const peerSession = createPeerSession(roomId, [callerNick, receiverNick]);
+      attachSocketToSession(socket, roomId, receiverNick);
+
       attachSocketToSession(callerSocket, roomId, callerNick);
 
-      if (callerNick && onlineUsers[callerNick]) onlineUsers[callerNick].status = 'occupato';
-      if (receiverNick && onlineUsers[receiverNick]) onlineUsers[receiverNick].status = 'occupato';
+      setOnlineUserStatus(callerNick, stateService.STATUS_BUSY);
+      setOnlineUserStatus(receiverNick, stateService.STATUS_BUSY);
       broadcastUsers(io);
 
       const callerPeerId = callerNick ? onlineUsers[callerNick]?.peerId : null;
@@ -492,16 +603,14 @@ module.exports = (io, options = {}) => {
         return;
       }
 
-      if (onlineUsers[nick]) {
-        onlineUsers[nick].status = 'occupato';
-      }
+      setOnlineUserStatus(nick, stateService.STATUS_BUSY);
 
       socket.emit('resume-call-result', { ok: true });
       emitPrivateSessionReady(io, roomId);
       broadcastUsers(io);
     });
 
-    socket.on('end-call', () => {
+    socket.on('end-call', async () => {
       if (!isLoggedIn(socket.id) || !isSocketIdentityBound(socket)) return;
 
       if (socket.roomId && !canSocketOperateRoom(socket, socket.roomId)) {
@@ -512,7 +621,7 @@ module.exports = (io, options = {}) => {
         return;
       }
 
-      leaveRoom(socket, io);
+      await leaveRoom(socket, io);
     });
 
     socket.on('deny-call', ({ callerSocketId }) => {

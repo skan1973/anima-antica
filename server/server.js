@@ -7,7 +7,8 @@ const helmet = require('helmet');
 const jwt = require('jsonwebtoken');
 const { ExpressPeerServer } = require('peer');
 const socketController = require('./controllers/socketController');
-const { cleanupBusyUsersOnStartup } = require('./services/stateService');
+const stateService = require('./services/stateService');
+const { validateRequest, schemas } = require('./middleware/validator');
 const { writeLog, captureError } = require('./logger');
 
 require('dotenv').config({ path: __dirname + '/.env' });
@@ -288,7 +289,7 @@ const runStartupStateCleanup = async () => {
   }
 
   try {
-    const result = await cleanupBusyUsersOnStartup();
+    const result = await stateService.cleanupBusyUsersOnStartup();
     startupStateCleanupCompleted = true;
     writeLog('info', 'startup.state_cleanup.completed', result);
     return true;
@@ -297,13 +298,6 @@ const runStartupStateCleanup = async () => {
     return false;
   }
 };
-
-connectDB()
-  .then(() => runStartupStateCleanup())
-  .catch((error) => {
-    captureError('startup.db.bootstrap.failed', error);
-  });
-
 const app = express();
 app.disable('x-powered-by');
 
@@ -636,10 +630,19 @@ const monitorDbAndSocketLifecycle = () => {
 
 setInterval(monitorDbAndSocketLifecycle, SOCKET_DB_MONITOR_INTERVAL_MS).unref();
 
-server.listen(port, () => {
-  writeLog('info', 'server.started', {
-    port,
-    nodeEnv,
-    monitorWebhookConfigured: Boolean(process.env.ERROR_MONITOR_WEBHOOK_URL)
+const bootstrapServer = async () => {
+  await connectDB();
+  await runStartupStateCleanup();
+
+  server.listen(port, () => {
+    writeLog('info', 'server.started', {
+      port,
+      nodeEnv,
+      monitorWebhookConfigured: Boolean(process.env.ERROR_MONITOR_WEBHOOK_URL)
+    });
   });
+};
+
+void bootstrapServer().catch((error) => {
+  captureError('startup.db.bootstrap.failed', error);
 });

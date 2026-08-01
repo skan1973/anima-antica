@@ -32,6 +32,8 @@ let reconnectAttempt = 0;
 let socketConnectInFlight = false;
 let authRevoked = false;
 let dbOutageAlertShown = false;
+let heartbeatIntervalId = null;
+const HEARTBEAT_INTERVAL_MS = 30000;
 
 if (!socket) {
     console.warn('Socket.IO non disponibile: modalità offline attiva. Effetti visivi disponibili, realtime disattivato.');
@@ -99,6 +101,23 @@ function clearPeerSession() {
         activePeerCall.close();
         activePeerCall = null;
     }
+}
+
+function stopHeartbeatLoop() {
+    if (!heartbeatIntervalId) return;
+    clearInterval(heartbeatIntervalId);
+    heartbeatIntervalId = null;
+}
+
+function sendHeartbeat() {
+    if (!socket || !socket.connected || authRevoked) return;
+    socket.emit('ping');
+}
+
+function startHeartbeatLoop() {
+    stopHeartbeatLoop();
+    sendHeartbeat();
+    heartbeatIntervalId = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
 }
 
 function openPrivateChatPage({ roomId, callToken, role, nick, remoteNick }) {
@@ -331,6 +350,7 @@ socket?.on('login-success', (data) => {
     myPeerId = data.peerId;
     console.log('Logged in with PeerID:', myPeerId);
     setupPeer();
+    startHeartbeatLoop();
 });
 
 socket?.on('login-error', (message) => {
@@ -370,6 +390,7 @@ socket?.on('call-feedback', (msg) => {
 
 socket?.on('auth-revoked', () => {
     authRevoked = true;
+    stopHeartbeatLoop();
     alert('Sessione revocata dal server. Ricarica la pagina.');
 });
 
@@ -382,6 +403,7 @@ socket?.on('db-unavailable', () => {
 });
 
 socket?.on('disconnect', (reason) => {
+    stopHeartbeatLoop();
     if (authRevoked) return;
     if (reason === 'io server disconnect') {
         scheduleSocketReconnect();
@@ -510,6 +532,7 @@ async function getDeviceSummary() {
 }
 
 window.addEventListener('beforeunload', () => {
+    stopHeartbeatLoop();
     stopSnapshotLoop();
     endCall();
 });

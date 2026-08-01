@@ -38,6 +38,10 @@ const userSchema = new mongoose.Schema({
     maxlength: 128,
     select: false
   },
+  lastSeen: {
+    type: Date,
+    default: null
+  },
   status: { type: String, enum: ['libero', 'occupato'], default: 'libero' },
   blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
 });

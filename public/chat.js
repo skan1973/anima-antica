@@ -25,6 +25,8 @@ let reconnectAttempt = 0;
 let socketConnectInFlight = false;
 let authRevoked = false;
 let dbOutageAlertShown = false;
+let heartbeatIntervalId = null;
+const HEARTBEAT_INTERVAL_MS = 30000;
 
 if (!currentNick || !roomId || !callToken || !role) {
     alert('Parametri sessione mancanti. Torna alla lobby.');
@@ -117,6 +119,23 @@ async function ensureLocalMedia() {
     localVideo.srcObject = localStream;
     await localVideo.play().catch(() => {});
     return localStream;
+}
+
+function stopHeartbeatLoop() {
+    if (!heartbeatIntervalId) return;
+    clearInterval(heartbeatIntervalId);
+    heartbeatIntervalId = null;
+}
+
+function sendHeartbeat() {
+    if (authRevoked || !socket.connected) return;
+    socket.emit('ping');
+}
+
+function startHeartbeatLoop() {
+    stopHeartbeatLoop();
+    sendHeartbeat();
+    heartbeatIntervalId = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
 }
 
 function setupPeer() {
@@ -220,6 +239,7 @@ socket.on('connect', () => {
 socket.on('login-success', async (data) => {
     myPeerId = data.peerId;
     setupPeer();
+    startHeartbeatLoop();
     try {
         await ensureLocalMedia();
     } catch (error) {
@@ -287,6 +307,7 @@ socket.on('connect_error', (error) => {
 
 socket.on('auth-revoked', () => {
     authRevoked = true;
+    stopHeartbeatLoop();
     alert('Sessione revocata dal server. Ricarica la pagina.');
 });
 
@@ -299,6 +320,7 @@ socket.on('db-unavailable', () => {
 });
 
 socket.on('disconnect', (reason) => {
+    stopHeartbeatLoop();
     if (authRevoked) return;
     if (reason === 'io server disconnect') {
         scheduleSocketReconnect();
@@ -318,6 +340,7 @@ msgInput.addEventListener('keydown', (event) => {
 });
 
 window.addEventListener('beforeunload', () => {
+    stopHeartbeatLoop();
     if (activePeerCall) activePeerCall.close();
     stopLocalMedia();
 });
