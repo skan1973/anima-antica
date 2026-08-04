@@ -24,7 +24,6 @@ Avvia un server Socket.IO minimale in-process (senza MongoDB né JWT stack), con
 | `cleanupBusyUsersOnStartup resets busy users to free on server startup` | Il server si avvia con utenti ancora occupati nel DB | Tutti gli utenti occupati vengono resettati |
 | `restoreUserStateAfterReconnect rejects a concurrent reconnect for the same user` | Due riconnessioni simultanee per lo stesso utente | Solo la prima ha successo; la seconda viene rifiutata |
 | `simultaneous reconnects for the same user allow only one login` | Due client usano lo stesso session ID | Un solo login ha successo; l'altro riceve errore |
-
 - `stateService.test.js`: compare-and-swap, fallback transazionale e conflitti concorrenti sul cambio stato utente.
 
 ## Esecuzione

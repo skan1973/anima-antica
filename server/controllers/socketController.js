@@ -316,7 +316,6 @@ const runStateWatchdog = async (io) => {
   }
 };
 
-
 function sanitize(str) {
   if (typeof str !== 'string') return '';
   return str

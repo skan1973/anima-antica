@@ -388,7 +388,6 @@ test('watchdog di inattività: socket disconnesso forzatamente viene rimosso dal
 test('ping/pong: la connessione rimane attiva tramite heartbeat Socket.IO', async (t) => {
   const { port } = await getTestServer();
 
-  const nick = `Ping1_${Date.now()}`;
   const client = createClient(port);
 
   t.after(() => {
