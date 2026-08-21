@@ -1,3 +1,4 @@
+// server/services/stateService.js
 const mongoose = require('mongoose');
 const { User } = require('../db');
 
@@ -206,6 +207,14 @@ async function cleanupBusyUsersWithoutSession(hasActiveSession) {
   return released;
 }
 
+async function getStateMetrics() {
+  const [total, busy] = await Promise.all([
+    User.countDocuments({}),
+    User.countDocuments({ status: STATUS_BUSY })
+  ]);
+  return { total, busy };
+}
+
 module.exports = {
   getUserByNick,
   reserveUser,
@@ -217,6 +226,7 @@ module.exports = {
   cleanupBusyUsersOnStartup,
   isNickInActiveCall,
   resetReconnectGuardsForTests,
+  getStateMetrics,
   STATUS_FREE,
   STATUS_BUSY
 };

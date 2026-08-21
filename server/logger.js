@@ -6,11 +6,27 @@ const ERROR_MONITOR_WEBHOOK_URL = typeof process.env.ERROR_MONITOR_WEBHOOK_URL =
   : '';
 const ERROR_MONITOR_TIMEOUT_MS = Number.parseInt(process.env.ERROR_MONITOR_TIMEOUT_MS || '3000', 10);
 
-const SENSITIVE_KEY_PATTERN = /(password|pass|token|secret|authorization|cookie|set-cookie|api[_-]?key|mongo(uri)?|jwt|stripe|access[_-]?token|refresh[_-]?token)/i;
+// ============================================================
+// PRIVACY & PII REDACTION PATTERNS (Punto 14)
+// ============================================================
+
+// Pattern per chiavi sensibili (già presente)
+const SENSITIVE_KEY_PATTERN = /(password|pass|token|secret|authorization|cookie|set-cookie|api[_-]?key|mongo(uri)?|jwt|stripe|access[_-]?token|refresh[_-]?token|private|key|credential)/i;
+
+// Pattern per PII - aggiunto per compliance GDPR/Privacy
+const PII_KEY_PATTERN = /(email|mail|phone|telefono|cellulare|address|indirizzo|city|citta|country|nazione|cap|zip|nick|nickname|username|user|name|nome|cognome|surname|lastname|firstname|ip|clientIp|userAgent)/i;
+
+// Pattern per contenuti media (snapshot) - non devono mai essere loggati
+const MEDIA_PATTERN = /(snapshot|imageDataUrl|avatar|photo|picture|profilePic|image|video|audio|stream|blob|data:image|data:video|data:audio)/i;
+
+// Pattern per token e credenziali (già presenti)
 const MONGO_CREDENTIAL_PATTERN = /(mongodb(?:\+srv)?:\/\/[^:]+):([^@]+)@/i;
 const BEARER_PATTERN = /(bearer\s+)[a-z0-9._~+\/-]+/gi;
 const LONG_SECRET_PATTERN = /([A-Za-z0-9_\-]{24,})/g;
 
+/**
+ * Sanitizza una stringa rimuovendo pattern sensibili
+ */
 function sanitizeString(value) {
   if (typeof value !== 'string') return value;
 
@@ -18,16 +34,24 @@ function sanitizeString(value) {
   output = output.replace(MONGO_CREDENTIAL_PATTERN, '$1<redacted-user>:<redacted-pass>@');
   output = output.replace(BEARER_PATTERN, '$1<redacted-token>');
 
-  // Avoid leaking long high-entropy values accidentally printed in errors.
+  // Redige stringhe lunghe (potenziali token/segreti)
   output = output.replace(LONG_SECRET_PATTERN, (candidate) => {
     const looksLikeWord = /^[a-z]+$/i.test(candidate);
     if (looksLikeWord) return candidate;
     return '<redacted-value>';
   });
 
+  // Redige pattern di PII comuni (email, telefono, IP)
+  output = output.replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, '<redacted-email>');
+  output = output.replace(/\b\d{3}[-.]?\d{3}[-.]?\d{4}\b/g, '<redacted-phone>');
+  output = output.replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, '<redacted-ip>');
+
   return output;
 }
 
+/**
+ * Redige in profondità un oggetto, rimuovendo PII e dati sensibili
+ */
 function redact(value, depth = 0) {
   if (depth > 5) return '[max-depth]';
 
@@ -38,16 +62,27 @@ function redact(value, depth = 0) {
   if (value && typeof value === 'object') {
     const out = {};
     for (const [key, nested] of Object.entries(value)) {
-      if (SENSITIVE_KEY_PATTERN.test(key)) {
+      // Controlla se è una chiave sensibile o PII
+      if (SENSITIVE_KEY_PATTERN.test(key) || PII_KEY_PATTERN.test(key)) {
         out[key] = '<redacted>';
-      } else {
-        out[key] = redact(nested, depth + 1);
+        continue;
       }
+      // Controlla se è un contenuto media (snapshot, immagini, ecc.)
+      if (MEDIA_PATTERN.test(key)) {
+        out[key] = '<redacted-media>';
+        continue;
+      }
+      // Redige ricorsivamente
+      out[key] = redact(nested, depth + 1);
     }
     return out;
   }
 
   if (typeof value === 'string') {
+    // Controlla se la stringa stessa è un contenuto media
+    if (value.startsWith('data:image/') || value.startsWith('data:video/') || value.startsWith('data:audio/')) {
+      return '<redacted-media>';
+    }
     return sanitizeString(value);
   }
 
@@ -147,4 +182,3 @@ module.exports = {
   redact,
   sanitizeString
 };
-

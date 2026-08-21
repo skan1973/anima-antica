@@ -1,0 +1,88 @@
+﻿├── .github
+│   └── workflows
+│       ├── sast.yml
+│       ├── secret-scan.yml
+│       └── security-audit.yml
+├── .vscode
+│   └── settings.json
+├── documenti
+│   ├── 03_STRATEGIA_DEPLOY_FINALE.md
+│   ├── analisi_finale_e_roadmap.md
+│   ├── atlas-credentials.env
+│   ├── AUDIT SICUREZZA & ARCHITETTURA — PROGETTO ANIMA ANTICA.md
+│   ├── bug-vulnerabilità2-soluzioni.md
+│   ├── bug-vulnerabilità-soluzioni.md
+│   ├── checklist-operativa-14-giorni-1000-utenti.md
+│   ├── documentazione_progetto.md
+│   ├── DOCUMENTAZIONE_SICUREZZA.md
+│   ├── mongo.txt
+│   ├── prompt.txt
+│   ├── prompt-finali.md
+│   ├── REFACTORING1.md
+│   ├── report_fix_sicurezza_e_test.md
+│   ├── report_osservabilita_baseline.md
+│   ├── report_piano_lavoro.md
+│   ├── riprendiamo-da-qui.md
+│   ├── ripristino-server.md
+│   ├── scaletta-definitiva.md
+│   ├── soluzioni_sicurezza_architettura.md
+│   └── soluzioni-bug-vulnerabilità.md
+├── public
+│   ├── chat.css
+│   ├── chat.html
+│   ├── chat.js
+│   ├── index.html
+│   ├── main.js
+│   └── style.css
+├── scripts
+│   ├── atlas-check.js
+│   ├── load-test.js
+│   ├── seed-fake-users.js
+│   ├── test_auth_hardening.js
+│   ├── test_fault_injection.js
+│   ├── test_pubsub.js
+│   ├── test_rate_limits.js
+│   ├── test-chiamata.js
+│   └── test-e2e.js
+├── server
+│   ├── controllers
+│   │   └── socketController.js
+│   ├── middleware
+│   │   ├── socketValidator.js
+│   │   └── validator.js
+│   ├── models
+│   │   └── ban.js
+│   ├── schemas
+│   │   ├── authSchema.js
+│   │   ├── callSchema.js
+│   │   ├── messageSchema.js
+│   │   ├── socketEventsSchema.js
+│   │   └── userLoginSchema.js
+│   ├── services
+│   │   ├── banService.js
+│   │   ├── sessionService.js
+│   │   └── stateService.js
+│   ├── .env
+│   ├── config.js
+│   ├── db.js
+│   ├── logger.js
+│   ├── redis.js
+│   ├── server.js
+│   └── tokenRegistry.js
+├── tests
+│   ├── banService.test.js
+│   ├── README.md
+│   ├── schemas.test.js
+│   ├── stateRecovery.test.js
+│   └── stateService.test.js
+├── .dockerignore
+├── .gitignore
+├── Dockerfile
+├── ecosystem.config.js
+├── nginx.conf.example
+├── package.json
+├── package-lock.json
+├── server_error.log
+├── struttura.txt
+├── test.txt
+└── test_cors.js

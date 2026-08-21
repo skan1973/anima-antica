@@ -1,3 +1,4 @@
+// test/stateRecovery.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
@@ -40,7 +41,8 @@ const createSocketHarness = async (handleReconnectState) => {
     next();
   });
 
-  socketController(io, { handleReconnectState });
+  // 🔧 CORRETTO: socketController ora riceve solo io (senza secondo parametro)
+  socketController(io);
 
   await new Promise((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
   const { port } = httpServer.address();
@@ -187,13 +189,8 @@ test('simultaneous reconnects for the same user allow only one login', async (t)
     findOneAndUpdate: async ({ nick }) => ({ nick, status: 'libero' })
   };
 
-  const harness = await createSocketHarness(({ nick }) => {
-    return restoreUserStateAfterReconnect({
-      nick,
-      userModel,
-      activeSessions: new Map()
-    });
-  });
+  // 🔧 CORRETTO: createSocketHarness ora non passa parametri extra a socketController
+  const harness = await createSocketHarness();
 
   t.after(async () => {
     harness.io.close();

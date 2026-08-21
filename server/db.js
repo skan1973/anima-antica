@@ -47,9 +47,8 @@ const userSchema = new mongoose.Schema({
 });
 
 ['findOneAndUpdate', 'updateOne', 'updateMany'].forEach((hookName) => {
-  userSchema.pre(hookName, function(next) {
+  userSchema.pre(hookName, function() {
     this.setOptions({ runValidators: true, context: 'query' });
-    next();
   });
 });
 
@@ -97,6 +96,11 @@ const getDbStatus = () => ({
   readyState: mongoose.connection.readyState,
   stateLabel: readyStateToLabel(mongoose.connection.readyState)
 });
+
+// Aggiunto per test di Fault Injection
+const forceDbStatus = (ready) => {
+  dbReady = ready;
+};
 
 const scheduleReconnect = (reason) => {
   if (reconnectTimer) return;
@@ -182,5 +186,6 @@ module.exports = {
   User,
   connectDB,
   isDbReady,
-  getDbStatus
+  getDbStatus,
+  forceDbStatus
 };

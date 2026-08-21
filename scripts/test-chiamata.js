@@ -1,3 +1,4 @@
+// scripts/test-chiamata.js
 const { io } = require("socket.io-client");
 
 async function getSocketToken() {
@@ -28,7 +29,6 @@ async function bootstrap() {
         auth: { token: token2 }
     });
 
-    // Attendiamo che entrambi siano connessi prima di loggare
     let connected = 0;
     function onConnect() {
         connected++;
@@ -37,7 +37,6 @@ async function bootstrap() {
             client1.emit("user_login", "Utente1");
             client2.emit("user_login", "Utente2");
 
-            // Attendiamo un momento che il login sia processato dal server
             setTimeout(() => {
                 console.log("--- Test 1: Inizio Chiamata ---");
                 client1.emit("call-request", { targetNick: "Utente2" });
@@ -68,7 +67,6 @@ async function bootstrap() {
         process.exit(0);
     });
 
-    // Timeout di sicurezza
     setTimeout(() => {
         console.log("Test fallito: Timeout");
         process.exit(1);

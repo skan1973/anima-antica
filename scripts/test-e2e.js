@@ -1,3 +1,4 @@
+// scripts/test-e2e.js
 const { spawn } = require('child_process');
 const path = require('path');
 
@@ -41,7 +42,9 @@ function waitForServerReady(serverProc, timeoutMs = 20000) {
 
 function runCallTest() {
   return new Promise((resolve, reject) => {
-    const testProc = spawn(nodeBin, ['test-chiamata.js'], {
+    // 🔧 AGGIORNATO: punta a scripts/test-chiamata.js
+    const testPath = path.join(rootDir, 'scripts', 'test-chiamata.js');
+    const testProc = spawn(nodeBin, [testPath], {
       cwd: rootDir,
       stdio: ['ignore', 'pipe', 'pipe']
     });

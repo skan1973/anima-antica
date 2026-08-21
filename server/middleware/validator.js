@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const { captureError } = require('../logger');
+const { socketTokenRevokeSchema } = require('../schemas/authSchema');
 
 /**
  * Middleware generico per validare i dati di richiesta Express
@@ -31,11 +32,6 @@ const validateRequest = (schema) => (req, res, next) => {
 module.exports = {
   validateRequest,
   schemas: {
-    socketTokenRevoke: z.object({
-      body: z.object({
-        token: z.string().min(1)
-      })
-    })
+    socketTokenRevoke: socketTokenRevokeSchema // Importato da authSchema.js
   }
 };
-

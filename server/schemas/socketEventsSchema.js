@@ -1,3 +1,4 @@
+// server/schemas/socketEventsSchema.js
 const { z } = require('zod');
 
 const userSnapshotSchema = z.object({
@@ -7,7 +8,7 @@ const userSnapshotSchema = z.object({
 
 const signalSchema = z.object({
   roomId: z.string().min(1),
-  signalData: z.any() // Signal data è complesso, validiamo solo la presenza di roomId
+  signalData: z.any()
 });
 
 module.exports = { userSnapshotSchema, signalSchema };

@@ -35,6 +35,8 @@ let dbOutageAlertShown = false;
 let heartbeatIntervalId = null;
 const HEARTBEAT_INTERVAL_MS = 30000;
 
+let turnConfig = null; // Variabile per memorizzare la configurazione TURN + WebRTC
+
 if (!socket) {
     console.warn('Socket.IO non disponibile: modalità offline attiva. Effetti visivi disponibili, realtime disattivato.');
 }
@@ -283,17 +285,65 @@ function addVideoStream(video, stream) {
     });
 }
 
+// ============================================================
+// TURN + WEBRTC CONFIGURATION (Punto 12 + Punto 13)
+// ============================================================
+async function fetchTurnConfig() {
+    try {
+        const response = await fetch('/api/turn-config');
+        if (!response.ok) {
+            console.warn('Impossibile ottenere configurazione TURN/WebRTC:', response.status);
+            return null;
+        }
+        const data = await response.json();
+        console.log('Configurazione ricevuta:', data);
+        return data;
+    } catch (error) {
+        console.error('Errore durante il fetch della configurazione:', error);
+        return null;
+    }
+}
+
 function setupPeer() {
     const peerPort = window.location.port
         ? Number.parseInt(window.location.port, 10)
         : (window.location.protocol === 'https:' ? 443 : 80);
 
-    peer = new Peer(myPeerId, {
+    const peerOptions = {
         host: window.location.hostname,
         port: peerPort,
         secure: window.location.protocol === 'https:',
         path: '/peerjs/myapp'
-    });
+    };
+
+    // Applica configurazione TURN + WebRTC se disponibile
+    if (turnConfig) {
+        const config = {};
+
+        // TURN / STUN servers
+        if (turnConfig.iceServers && turnConfig.iceServers.length > 0) {
+            config.iceServers = turnConfig.iceServers;
+            console.log('TURN servers configurati:', turnConfig.iceServers.length);
+        }
+
+        // WebRTC Tuning (Punto 13)
+        if (turnConfig.webRtcConfig) {
+            const w = turnConfig.webRtcConfig;
+            if (w.iceCandidatePoolSize) config.iceCandidatePoolSize = w.iceCandidatePoolSize;
+            if (w.iceTransportPolicy) config.iceTransportPolicy = w.iceTransportPolicy;
+            if (w.bundlePolicy) config.bundlePolicy = w.bundlePolicy;
+            if (w.rtcpMuxPolicy) config.rtcpMuxPolicy = w.rtcpMuxPolicy;
+            console.log('WebRTC tuning applicato:', w);
+        }
+
+        if (Object.keys(config).length > 0) {
+            peerOptions.config = config;
+        }
+    } else {
+        console.log('Nessuna configurazione TURN/WebRTC ricevuta, uso default');
+    }
+
+    peer = new Peer(myPeerId, peerOptions);
 
     peer.on('open', (id) => {
         isPeerReady = true;
@@ -346,10 +396,185 @@ function setupPeer() {
     });
 }
 
+// ============================================================
+// BITRATE CONTROL (Punto 13)
+// ============================================================
+function applyBitrateConstraints(peerConnection, config) {
+    if (!peerConnection || !config) return;
+
+    try {
+        const senders = peerConnection.getSenders();
+        senders.forEach((sender) => {
+            if (!sender.track) return;
+            const kind = sender.track.kind;
+
+            if (kind === 'video' && config.maxBitrateKbps) {
+                const params = sender.getParameters();
+                if (!params.encodings) params.encodings = [{}];
+                params.encodings[0].maxBitrate = config.maxBitrateKbps * 1000;
+                sender.setParameters(params).catch((e) => {
+                    console.warn('Impossibile impostare maxBitrate video:', e);
+                });
+                console.log(`Bitrate video impostato a ${config.maxBitrateKbps} kbps`);
+            }
+
+            if (kind === 'audio' && config.audioBitrateKbps) {
+                const params = sender.getParameters();
+                if (!params.encodings) params.encodings = [{}];
+                params.encodings[0].maxBitrate = config.audioBitrateKbps * 1000;
+                sender.setParameters(params).catch((e) => {
+                    console.warn('Impossibile impostare maxBitrate audio:', e);
+                });
+                console.log(`Bitrate audio impostato a ${config.audioBitrateKbps} kbps`);
+            }
+        });
+    } catch (error) {
+        console.warn('Errore durante l\'applicazione del bitrate:', error);
+    }
+}
+
+function setupPeer() {
+    const peerPort = window.location.port
+        ? Number.parseInt(window.location.port, 10)
+        : (window.location.protocol === 'https:' ? 443 : 80);
+
+    const peerOptions = {
+        host: window.location.hostname,
+        port: peerPort,
+        secure: window.location.protocol === 'https:',
+        path: '/peerjs/myapp'
+    };
+
+    // Applica configurazione TURN + WebRTC se disponibile
+    if (turnConfig) {
+        const config = {};
+
+        // TURN / STUN servers
+        if (turnConfig.iceServers && turnConfig.iceServers.length > 0) {
+            config.iceServers = turnConfig.iceServers;
+            console.log('TURN servers configurati:', turnConfig.iceServers.length);
+        }
+
+        // WebRTC Tuning (Punto 13)
+        if (turnConfig.webRtcConfig) {
+            const w = turnConfig.webRtcConfig;
+            if (w.iceCandidatePoolSize) config.iceCandidatePoolSize = w.iceCandidatePoolSize;
+            if (w.iceTransportPolicy) config.iceTransportPolicy = w.iceTransportPolicy;
+            if (w.bundlePolicy) config.bundlePolicy = w.bundlePolicy;
+            if (w.rtcpMuxPolicy) config.rtcpMuxPolicy = w.rtcpMuxPolicy;
+            console.log('WebRTC tuning applicato:', w);
+        }
+
+        if (Object.keys(config).length > 0) {
+            peerOptions.config = config;
+        }
+    } else {
+        console.log('Nessuna configurazione TURN/WebRTC ricevuta, uso default');
+    }
+
+    peer = new Peer(myPeerId, peerOptions);
+
+    peer.on('open', (id) => {
+        isPeerReady = true;
+        console.log('PeerJS pronto con ID:', id);
+    });
+
+    peer.on('call', (call) => {
+        const metadata = call.metadata || {};
+        const isAuthorizedIncomingCall =
+            authorizedPeerSession &&
+            metadata.roomId === authorizedPeerSession.roomId &&
+            metadata.callToken === authorizedPeerSession.callToken &&
+            call.peer === authorizedPeerSession.remotePeerId;
+
+        if (!isAuthorizedIncomingCall) {
+            console.warn('Peer call rifiutata: sessione non autorizzata', {
+                fromPeer: call.peer,
+                roomId: metadata.roomId
+            });
+            call.close();
+            return;
+        }
+
+        if (!localStream) {
+            console.warn('Nessun stream locale disponibile per rispondere alla chiamata.');
+            call.close();
+            return;
+        }
+
+        activePeerCall = call;
+        call.answer(localStream);
+        const video = document.createElement('video');
+        call.on('stream', userVideoStream => {
+            addVideoStream(video, userVideoStream);
+        });
+        call.on('close', () => {
+            if (activePeerCall === call) {
+                activePeerCall = null;
+            }
+        });
+        call.on('error', () => {
+            if (activePeerCall === call) {
+                activePeerCall = null;
+            }
+        });
+
+        // Applica bitrate constraints sulla peer connection
+        const pc = call.peerConnection;
+        if (pc && turnConfig?.webRtcConfig) {
+            applyBitrateConstraints(pc, turnConfig.webRtcConfig);
+        }
+    });
+
+    peer.on('error', (err) => {
+        console.error('PeerJS error:', err);
+    });
+}
+
+// ============================================================
+// PRIVACY BANNER (Punto 15)
+// ============================================================
+const privacyBanner = document.getElementById('privacyBanner');
+const acceptPrivacyBtn = document.getElementById('acceptPrivacyBtn');
+const PRIVACY_CONSENT_KEY = 'anima_privacy_consent';
+
+function checkPrivacyConsent() {
+    const consented = localStorage.getItem(PRIVACY_CONSENT_KEY);
+    if (consented === 'true') {
+        privacyBanner.classList.add('hidden');
+        return true;
+    }
+    privacyBanner.classList.remove('hidden');
+    return false;
+}
+
+function acceptPrivacy() {
+    localStorage.setItem(PRIVACY_CONSENT_KEY, 'true');
+    privacyBanner.classList.add('hidden');
+}
+
+// Inizializza il banner di consenso
+if (privacyBanner && acceptPrivacyBtn) {
+    // Verifica se il consenso è già stato dato
+    checkPrivacyConsent();
+    
+    // Gestisce il click su "Accetto e continuo"
+    acceptPrivacyBtn.addEventListener('click', acceptPrivacy);
+}
+
 socket?.on('login-success', (data) => {
     myPeerId = data.peerId;
     console.log('Logged in with PeerID:', myPeerId);
-    setupPeer();
+    
+    // Prima di configurare Peer, otteniamo la configurazione TURN + WebRTC
+    fetchTurnConfig().then((config) => {
+        turnConfig = config;
+        setupPeer();
+    }).catch((err) => {
+        console.warn('Errore durante il fetch del TURN/WebRTC, continuo senza:', err);
+        setupPeer();
+    });
+    
     startHeartbeatLoop();
 });
 
@@ -507,6 +732,12 @@ function startCall(targetPeerId, roomId, callToken) {
             activePeerCall = null;
         }
     });
+
+    // Applica bitrate constraints sulla peer connection
+    const pc = call.peerConnection;
+    if (pc && turnConfig?.webRtcConfig) {
+        applyBitrateConstraints(pc, turnConfig.webRtcConfig);
+    }
 }
 
 function endCall() {
@@ -698,4 +929,3 @@ connectSocketAuthenticated();
 if (!socket) {
     renderOfflineFakeUsers();
 }
-

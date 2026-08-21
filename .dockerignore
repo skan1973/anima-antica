@@ -11,6 +11,3 @@
 **/test-chiamata.js
 **/debug-env.js
 **/.DS_Store
-Dockerfile
-.dockerignore
-
