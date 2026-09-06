@@ -6,6 +6,7 @@ require('dotenv').config();
 // ============================================================
 const express = require('express');
 const http = require('http');
+const path = require('node:path');
 const crypto = require('node:crypto');
 const { Server } = require('socket.io');
 const helmet = require('helmet');
@@ -22,7 +23,14 @@ const { writeLog, captureError } = require('./logger');
 const sessionService = require('./services/sessionService');
 const { socketTokenRevokeSchema } = require('./schemas/authSchema');
 const { pubClient, subClient, isRedisReady, redisUrl } = require('./redis');
-const { setTokenRecord, getTokenRecord, cleanupSocketTokenRegistry, socketTokenRegistry } = require('./tokenRegistry');
+const {
+  setTokenRecord,
+  getTokenRecord,
+  cleanupSocketTokenRegistry,
+  socketTokenRegistry,
+  getHealthStatus
+} = require('./tokenRegistry');
+const { getMetrics } = require('./metrics');
 const { connectDB, isDbReady, getDbStatus } = require('./db');
 const { jwtSecret } = require('./config');
 const tokenInvalidator = require('./services/tokenInvalidator');
@@ -251,6 +259,7 @@ const isProd = nodeEnv === 'production';
 const allowedClientOrigins = validateClientOriginsOrExit(process.env.CLIENT_ORIGIN, isProd);
 const port = validatePortOrExit(process.env.PORT, isProd);
 const socketTokenTtlSeconds = parsePositiveInt(process.env.SOCKET_TOKEN_TTL_SECONDS, DEFAULT_SOCKET_TOKEN_TTL_SECONDS);
+const metricsToken = typeof process.env.METRICS_TOKEN === 'string' ? process.env.METRICS_TOKEN.trim() : '';
 
 const app = express();
 app.disable('x-powered-by');
@@ -265,6 +274,10 @@ app.use((req, res, next) => {
   res.setHeader('X-Request-Id', req.requestId);
   next();
 });
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  index: 'index.html',
+  extensions: ['html']
+}));
 
 // ============================================================
 // GATE DB PER LE ROTTE /api - AGGIUNTO PER PROMPT 12
@@ -575,8 +588,10 @@ const monitorDbAndSocketLifecycle = async () => {
 };
 
 const DB_MONITOR_INTERVAL_MS = 10000;
-setInterval(monitorDbAndSocketLifecycle, DB_MONITOR_INTERVAL_MS);
-setTimeout(monitorDbAndSocketLifecycle, 1000);
+const dbMonitorTimer = setInterval(monitorDbAndSocketLifecycle, DB_MONITOR_INTERVAL_MS);
+dbMonitorTimer.unref?.();
+const initialDbMonitorTimer = setTimeout(monitorDbAndSocketLifecycle, 1000);
+initialDbMonitorTimer.unref?.();
 
 // ============================================================
 // PEERJS CONFIGURATION - MODIFICATA PER LOAD TEST (Punto 16)
@@ -618,6 +633,12 @@ app.get('/api/health/token-registry', (req, res) => {
 });
 
 app.get('/api/metrics', async (req, res) => {
+  if (isProd && !metricsToken) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  if (isProd && req.get('authorization') !== `Bearer ${metricsToken}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   const metrics = await stateService.getStateMetrics();
   return res.json({
     state: metrics,

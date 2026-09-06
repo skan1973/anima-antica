@@ -13,7 +13,7 @@
     "start:instance2": "cross-env PORT=3001 node server/server.js",
     "start:instance3": "cross-env PORT=3002 node server/server.js",
     "start:cluster": "concurrently \"npm run start:instance1\" \"npm run start:instance2\" \"npm run start:instance3\"",
-    "test:unit": "node --test test/*.test.js",
+    "test:unit": "node --test tests/*.test.js",
     "test:all": "npm run test:unit && npm run test:call",
     "test:call": "node scripts/test-chiamata.js",
     "test:e2e": "node scripts/test-e2e.js",
@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "@socket.io/redis-adapter": "^8.3.0",
-    "bcrypt": "5.1.1",
+    "bcryptjs": "^3.0.2",
     "dotenv": "^16.4.5",
     "envalid": "^8.2.0",
     "express": "^4.19.2",
@@ -45,9 +45,10 @@
     "cross-env": "^7.0.3"
   },
   "overrides": {
-    "ws": "8.17.0",
-    "engine.io": "6.5.5",
-    "socket.io-parser": "4.2.4"
+    "ws": "8.21.3",
+    "engine.io": "6.6.10",
+    "socket.io-parser": "4.2.7",
+    "qs": "6.16.0"
   }
 }
 

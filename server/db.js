@@ -2,7 +2,7 @@
 const mongoose = require('mongoose');
 const { NICK_REGEX } = require('./schemas/userLoginSchema');
 const { writeLog, captureError } = require('./logger');
-let passwordHasher;
+const passwordHasher = require('bcryptjs');
 let dbReady = false;
 let reconnectTimer = null;
 let reconnectAttempt = 0;
@@ -10,16 +10,15 @@ let listenersAttached = false;
 
 const RETRY_BASE_MS = Number.parseInt(process.env.DB_RETRY_BASE_MS || '2000', 10);
 const RETRY_MAX_MS = Number.parseInt(process.env.DB_RETRY_MAX_MS || '30000', 10);
+const configuredBcryptRounds = Number.parseInt(process.env.BCRYPT_ROUNDS || '12', 10);
+const BCRYPT_ROUNDS = Number.isInteger(configuredBcryptRounds)
+  && configuredBcryptRounds >= 10
+  && configuredBcryptRounds <= 14
+  ? configuredBcryptRounds
+  : 12;
 
 // Defensive setting against query selector injection in filters.
 mongoose.set('sanitizeFilter', true);
-
-try {
-  // Native bcrypt uses libuv threadpool and is generally safer under load.
-  passwordHasher = require('bcrypt');
-} catch (error) {
-  passwordHasher = require('bcryptjs');
-}
 
 const userSchema = new mongoose.Schema({
   nick: {
@@ -54,8 +53,7 @@ const userSchema = new mongoose.Schema({
 
 userSchema.pre('save', async function() {
   if (!this.isModified('password')) return;
-  const rounds = Number.parseInt(process.env.BCRYPT_ROUNDS || '10', 10);
-  const hash = await passwordHasher.hash(this.password, Number.isFinite(rounds) ? rounds : 10);
+  const hash = await passwordHasher.hash(this.password, BCRYPT_ROUNDS);
   this.password = hash;
 });
 

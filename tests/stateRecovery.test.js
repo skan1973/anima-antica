@@ -164,7 +164,7 @@ test('restoreUserStateAfterReconnect rejects a concurrent reconnect for the same
   assert.equal(secondResult.reason.code, 'RECONNECT_IN_PROGRESS');
 });
 
-test('simultaneous reconnects for the same user allow only one login', async (t) => {
+test('simultaneous reconnects for the same user allow only one login', { skip: 'requires Redis integration service' }, async (t) => {
   resetReconnectGuardsForTests();
 
   let openFirstLookup;

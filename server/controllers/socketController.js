@@ -421,7 +421,8 @@ const cleanupExpiredPeerSessions = async () => {
   }
 };
 
-setInterval(cleanupExpiredPeerSessions, HEARTBEAT_WATCHDOG_INTERVAL_MS);
+const peerSessionCleanupTimer = setInterval(cleanupExpiredPeerSessions, HEARTBEAT_WATCHDOG_INTERVAL_MS);
+peerSessionCleanupTimer.unref?.();
 
 const isRateLimited = (rateLimitMap, key, windowMs, maxReq) => {
   const now = Date.now();

@@ -126,13 +126,14 @@ const getTokenRecord = async (jti) => {
 
 // Cleanup job periodico con metrica
 if (CLEANUP_INTERVAL_MS > 0) {
-  setInterval(() => {
+  const cleanupTimer = setInterval(() => {
     const removed = cleanupSocketTokenRegistry();
     if (removed > 0) {
       console.log(`[LOG] token.registry.cleanup: removed=${removed}, remaining=${socketTokenRegistry.size}`);
       // Metrica inviata via redis.js opsCounter se accessibile, qui log only
     }
   }, CLEANUP_INTERVAL_MS);
+  cleanupTimer.unref?.();
 }
 
 // Health Check Helper
