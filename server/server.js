@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 // server/server.js
 // ============================================================
 // REQUIRE DEI MODULI
@@ -23,6 +25,13 @@ const { pubClient, subClient, isRedisReady, redisUrl } = require('./redis');
 const { setTokenRecord, getTokenRecord, cleanupSocketTokenRegistry, socketTokenRegistry } = require('./tokenRegistry');
 const { connectDB, isDbReady, getDbStatus } = require('./db');
 const { jwtSecret } = require('./config');
+const tokenInvalidator = require('./services/tokenInvalidator');
+const redisService = require('./redis');
+
+// Registrazione callback all'avvio
+redisService.registerInvalidateCallback((payload) => {
+  tokenInvalidator.handleTokenInvalidate(payload, io);
+});
 
 const DEFAULT_DEV_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000'];
 const ALLOWED_NODE_ENVS = new Set(['development', 'test', 'production']);
@@ -285,6 +294,10 @@ app.use('/api', (req, res, next) => {
 
 const checkBan = async (req, res, next) => {
   const ip = req.ip;
+  if (!pubClient) {
+    return next();
+  }
+
   try {
     const isBanned = await pubClient.get(`ban:${ip}`);
     if (isBanned) {
@@ -296,68 +309,79 @@ const checkBan = async (req, res, next) => {
   next();
 };
 
-const authRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: async (req, res) => {
-    try {
-      if (pubClient) await pubClient.setEx(`ban:${req.ip}`, 3600, 'true');
-    } catch (err) {
-      writeLog('error', 'rate.limiter.ban_set_failed', { error: err.message });
+// Crea lo store Redis solo se pubClient è disponibile, altrimenti usa MemoryStore di default (undefined)
+// getRateLimitStore non più necessario post-fix
+
+
+const createAuthRateLimiter = () => {
+  const store = pubClient
+    ? new RedisStore({ sendCommand: (...args) => pubClient.sendCommand(args) })
+    : undefined;
+  return rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: store,
+    handler: async (req, res) => {
+      if (pubClient) {
+        try {
+          await pubClient.setEx(`ban:${req.ip}`, 3600, 'true');
+        } catch (err) {
+          writeLog('error', 'rate.limiter.ban_set_failed', { error: err.message });
+        }
+      }
+      res.status(429).json({ error: 'Troppi tentativi. Accesso sospeso temporaneamente.' });
     }
-    res.status(403).json({ error: 'Troppi tentativi. Accesso sospeso per 1 ora.' });
-  },
-  store: {
-    increment: async (key) => ({ totalHits: 1, resetTime: new Date() }),
-    decrement: (key) => {},
-    resetKey: (key) => {}
-  }
 });
+};
+const authRateLimiter = createAuthRateLimiter();
 
 const fingerprintRateLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  store: pubClient ? new RedisStore({ sendCommand: (...args) => pubClient.sendCommand(args) }) : undefined,
+  keyGenerator: (req) => {
+    const { ip, userAgent } = getRequestClientContext(req);
+    return buildClientFingerprint({ ip, userAgent });
+  },
   handler: async (req, res) => {
     try {
       if (pubClient) await pubClient.setEx(`ban:${req.ip}`, 3600, 'true');
     } catch (err) {
       writeLog('error', 'rate.limiter.ban_set_failed', { error: err.message });
     }
-    res.status(403).json({ error: 'Richieste troppo frequenti. Accesso sospeso per 1 ora.' });
-  },
-  store: {
-    increment: async (key) => ({ totalHits: 1, resetTime: new Date() }),
-    decrement: (key) => {},
-    resetKey: (key) => {}
-  },
-  keyGenerator: (req) => {
-    const { ip, userAgent } = getRequestClientContext(req);
-    return buildClientFingerprint({ ip, userAgent });
+    res.status(429).json({ error: 'Richieste troppo frequenti. Accesso sospeso temporaneamente.' });
   }
 });
 
-// Inizializziamo correttamente lo store quando Redis è pronto
-if (pubClient) {
-    authRateLimiter.options.store = new RedisStore({ sendCommand: (...args) => pubClient.sendCommand(args) });
-    fingerprintRateLimiter.options.store = new RedisStore({ sendCommand: (...args) => pubClient.sendCommand(args) });
-}
+// ============================================================
+// SHARED CORS CONFIGURATION (Fix SCHEDA 003)
+// ============================================================
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) {
+      if (isProd) {
+        writeLog('warn', 'cors.no_origin_prod_denied');
+        return callback(new Error('CORS_ORIGIN_REQUIRED'));
+      }
+      writeLog('warn', 'cors.no_origin_dev', { env: nodeEnv });
+      return callback(null, true); // Consenti solo in dev per debugging
+    }
+    if (allowedClientOrigins.has(origin)) {
+      return callback(null, true);
+    }
+    writeLog('warn', 'cors.denied', { origin, allowed: Array.from(allowedClientOrigins) });
+    return callback(new Error('CORS_ORIGIN_DENIED'));
+  },
+  methods: ['GET', 'POST']
+};
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      if (allowedClientOrigins.has(origin)) {
-        return callback(null, true);
-      }
-      return callback(new Error('CORS_ORIGIN_DENIED'));
-    },
-    methods: ['GET', 'POST']
-  }
+  cors: corsOptions
 });
 
 // Redis setup
@@ -469,6 +493,11 @@ io.use(async (socket, next) => {
     socket.jti = jti;
     socket.sid = sid;
 
+    tokenInvalidator.registerActiveSocket(jti, socket.id);
+    socket.on('disconnect', () => {
+      tokenInvalidator.unregisterActiveSocket(jti);
+    });
+
     writeLog('info', 'socket.auth.success', {
       socketId: socket.id,
       jti,
@@ -566,13 +595,7 @@ const peerServer = ExpressPeerServer(server, {
   path: '/myapp',
   allow_discovery: false,
   proxied: isProd,
-  corsOptions: {
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      if (allowedClientOrigins.has(origin)) return callback(null, true);
-      return callback(new Error('CORS_ORIGIN_DENIED'));
-    }
-  }
+  corsOptions: corsOptions
 });
 
 app.use('/peerjs', peerIpRateLimiter, peerServer);
@@ -590,10 +613,15 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+app.get('/api/health/token-registry', (req, res) => {
+  return res.json(getHealthStatus());
+});
+
 app.get('/api/metrics', async (req, res) => {
   const metrics = await stateService.getStateMetrics();
   return res.json({
     state: metrics,
+    tokenRegistry: getMetrics(),
     socket: { active: io.sockets.sockets.size }
   });
 });
@@ -605,24 +633,73 @@ app.get('/api/socket-token', checkBan, authRateLimiter, fingerprintRateLimiter, 
 });
 
 app.post('/api/socket-token/revoke', checkBan, authRateLimiter, fingerprintRateLimiter, async (req, res) => {
-  const result = socketTokenRevokeSchema.safeParse(req.body);
-  if (!result.success) {
-    return res.status(400).json({ error: 'Invalid request', details: result.error });
-  }
-
-  const authHeader = typeof req.headers.authorization === 'string' ? req.headers.authorization : '';
-  const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice('Bearer '.length).trim() : '';
-  const token = bearerToken || result.data.token;
-
-  if (!token) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  const revokeResult = await sessionService.revokeSession(token);
-  if (revokeResult.revoked) {
-    return res.json({ message: 'Token revoked successfully' });
-  } else {
-    return res.status(404).json({ error: 'Token not found' });
+  try {
+    const { token } = req.body;
+    const clientContext = getRequestClientContext(req);
+    
+    if (!token) {
+      writeLog('warn', 'revoke.missing_token', { ip: clientContext.ip });
+      return res.status(400).json({ error: 'Token richiesto nel body' });
+    }
+    
+    // Validazione reason (opzionale)
+    const allowedReasons = ['manual', 'timeout', 'security', 'admin'];
+    const reason = allowedReasons.includes(req.body.reason) ? req.body.reason : 'manual';
+    
+    const revokeResult = await sessionService.revokeSession(token, {
+      ip: clientContext.ip,
+      userAgent: clientContext.userAgent,
+      reason
+    });
+    
+    // Mapping errorCode → HTTP status
+    const statusMap = {
+      'JWT_INVALID': 400,
+      'JWT_EXPIRED': 400,
+      'TOKEN_NOT_FOUND': 404,
+      'REDIS_UNAVAILABLE': 503,
+      'CONCURRENT_MODIFICATION': 409,
+      'REVOCATION_FAILED': 500,
+      'UNEXPECTED_ERROR': 500,
+      'JWT_VERIFICATION_ERROR': 400
+    };
+    
+    if (!revokeResult.revoked) {
+      const statusCode = statusMap[revokeResult.errorCode] || 500;
+      writeLog('warn', 'revoke.failed', {
+        errorCode: revokeResult.errorCode,
+        jti: revokeResult.jti,
+        ip: clientContext.ip,
+        latencyMs: revokeResult.latencyMs
+      });
+      return res.status(statusCode).json({
+        error: revokeResult.errorCode,
+        message: revokeResult.errorDetails || 'Revoca fallita',
+        jti: revokeResult.jti,
+        timestamp: revokeResult.timestamp
+      });
+    }
+    
+    writeLog('info', 'revoke.success', {
+      jti: revokeResult.jti,
+      source: revokeResult.source,
+      ip: clientContext.ip,
+      latencyMs: revokeResult.latencyMs
+    });
+    
+    return res.json({ 
+      message: 'Token revoked successfully',
+      jti: revokeResult.jti,
+      timestamp: revokeResult.timestamp,
+      source: revokeResult.source
+    });
+    
+  } catch (error) {
+    captureError('revoke.endpoint.unexpected', error, { 
+      ip: req.ip,
+      bodyKeys: Object.keys(req.body || {})
+    });
+    return res.status(500).json({ error: 'INTERNAL_ERROR' });
   }
 });
 

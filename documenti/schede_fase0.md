@@ -184,4 +184,4 @@ Fammi un report sulle dipendenze crittografiche. NON modificare nulla.
 - [ ] Commit finale FASE 0
 - [ ] Deploy bloccato fino a completamento
 
----
+--- COMPLETATO

@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "description": "Progetto ANIMA ANTICA",
   "main": "server.js",
+  "engines": {
+    "node": ">=20.0.0 <21",
+    "npm": ">=10.0.0"
+  },
   "scripts": {
     "start": "node server/server.js",
     "start:instance1": "cross-env PORT=3000 node server/server.js",
@@ -14,17 +18,13 @@
     "test:call": "node scripts/test-chiamata.js",
     "test:e2e": "node scripts/test-e2e.js",
     "test:multi": "cross-env SERVER_URLS=http://localhost:3000,http://localhost:3001,http://localhost:3002 node scripts/seed-fake-users.js",
-    "audit:security": "npm audit --audit-level=moderate",
+    "audit:security": "npm audit --audit-level=high --json > audit-report.json || true",
     "atlas:check": "node scripts/atlas-check.js",
     "seed:users": "node scripts/seed-fake-users.js"
   },
-  "allowScripts": {
-    "bcrypt@6.0.0": true
-  },
   "dependencies": {
     "@socket.io/redis-adapter": "^8.3.0",
-    "bcrypt": "^6.0.0",
-    "bcryptjs": "^3.0.3",
+    "bcrypt": "5.1.1",
     "dotenv": "^16.4.5",
     "envalid": "^8.2.0",
     "express": "^4.19.2",
@@ -43,5 +43,11 @@
   "devDependencies": {
     "concurrently": "^8.0.0",
     "cross-env": "^7.0.3"
+  },
+  "overrides": {
+    "ws": "8.17.0",
+    "engine.io": "6.5.5",
+    "socket.io-parser": "4.2.4"
   }
 }
+

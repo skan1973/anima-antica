@@ -16,6 +16,10 @@ const validateJwtSecretOrExit = (secretValue) => {
     reasons.push(`JWT_SECRET troppo corto (minimo ${MIN_JWT_SECRET_LENGTH} caratteri)`);
   }
 
+  if (/^(.)\1+$/.test(secret)) {
+    reasons.push("Il secret è composto da un singolo carattere ripetuto (entropia zero). Generane uno sicuro con: openssl rand -base64 48");
+  }
+
   if (/^<.*>$/.test(secret)) {
     reasons.push('JWT_SECRET sembra un placeholder');
   }

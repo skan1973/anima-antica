@@ -7,8 +7,8 @@ const { messageSchema } = require('../schemas/messageSchema');
 const { userLoginSchema } = require('../schemas/userLoginSchema');
 const { callRequestSchema } = require('../schemas/callSchema');
 const { userSnapshotSchema, signalSchema } = require('../schemas/socketEventsSchema');
-const { getTokenRecord, setTokenRecord } = require('../server');
-const { pubClient, isRedisReady } = require('../redis');
+const { getTokenRecord, setTokenRecord } = require('../tokenRegistry');
+const { pubClient, isRedisReady, scanKeys } = require('../redis');
 
 // ============================================================
 // FALLBACK IN-MEMORY (usato quando Redis non è disponibile)
@@ -61,7 +61,7 @@ const presenceDelete = async (nick) => {
 
 const presenceGetAll = async () => {
   if (isRedisReady()) {
-    const keys = await pubClient.keys(`${REDIS_PREFIX}presence:*`);
+    const keys = await scanKeys(`${REDIS_PREFIX}presence:*`);
     if (!keys.length) return [];
     const multi = pubClient.multi();
     keys.forEach((key) => multi.hgetall(key));
@@ -164,7 +164,7 @@ const peerSessionTouch = async (roomId) => {
 
 const peerSessionGetAll = async () => {
   if (isRedisReady()) {
-    const keys = await pubClient.keys(`${REDIS_PREFIX}peersession:*`);
+    const keys = await scanKeys(`${REDIS_PREFIX}peersession:*`);
     if (!keys.length) return [];
     const multi = pubClient.multi();
     keys.forEach((key) => multi.get(key));
