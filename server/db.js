@@ -95,6 +95,14 @@ const getDbStatus = () => ({
   stateLabel: readyStateToLabel(mongoose.connection.readyState)
 });
 
+const closeDB = async () => {
+  clearReconnectTimer();
+  if (mongoose.connection.readyState !== 0) {
+    await mongoose.connection.close(false);
+  }
+  dbReady = false;
+};
+
 // Aggiunto per test di Fault Injection
 const forceDbStatus = (ready) => {
   dbReady = ready;
@@ -185,5 +193,6 @@ module.exports = {
   connectDB,
   isDbReady,
   getDbStatus,
+  closeDB,
   forceDbStatus
 };

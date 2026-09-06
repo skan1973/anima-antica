@@ -8,11 +8,21 @@ const sendMsgBtn = document.getElementById('sendMsgBtn');
 const messagesDiv = document.getElementById('messages');
 
 const params = new URLSearchParams(window.location.search);
-const currentNick = (params.get('nick') || '').trim();
-const remoteNick = (params.get('remoteNick') || '').trim();
-const roomId = (params.get('roomId') || '').trim();
-const callToken = (params.get('callToken') || '').trim();
-const role = (params.get('role') || '').trim();
+const sessionKey = params.get('session') || '';
+let sessionData = null;
+try {
+    sessionData = sessionKey ? JSON.parse(sessionStorage.getItem(sessionKey) || 'null') : null;
+} catch (error) {
+    sessionData = null;
+}
+if (sessionKey) sessionStorage.removeItem(sessionKey);
+window.history.replaceState({}, document.title, '/chat.html');
+
+const currentNick = (sessionData?.nick || '').trim();
+const remoteNick = (sessionData?.remoteNick || '').trim();
+const roomId = (sessionData?.roomId || '').trim();
+const callToken = (sessionData?.callToken || '').trim();
+const role = (sessionData?.role || '').trim();
 
 let myPeerId = '';
 let remotePeerId = '';
@@ -27,6 +37,8 @@ let authRevoked = false;
 let dbOutageAlertShown = false;
 let heartbeatIntervalId = null;
 const HEARTBEAT_INTERVAL_MS = 30000;
+let heartbeatTimeoutId = null;
+let lastHeartbeatAt = 0;
 
 let turnConfig = null; // Variabile per memorizzare la configurazione TURN + WebRTC
 
@@ -61,7 +73,8 @@ function scheduleSocketReconnect() {
         return;
     }
 
-    const delayMs = Math.min(1000 * (2 ** Math.min(reconnectAttempt, 5)), 10000);
+    const baseDelayMs = Math.min(1000 * (2 ** Math.min(reconnectAttempt, 5)), 10000);
+    const delayMs = Math.round(baseDelayMs * (0.75 + Math.random() * 0.5));
     reconnectAttempt += 1;
     reconnectTimerId = setTimeout(() => {
         reconnectTimerId = null;
@@ -127,11 +140,21 @@ function stopHeartbeatLoop() {
     if (!heartbeatIntervalId) return;
     clearInterval(heartbeatIntervalId);
     heartbeatIntervalId = null;
+    if (heartbeatTimeoutId) clearTimeout(heartbeatTimeoutId);
+    heartbeatTimeoutId = null;
 }
 
 function sendHeartbeat() {
     if (authRevoked || !socket.connected) return;
+    lastHeartbeatAt = Date.now();
     socket.emit('ping');
+    if (heartbeatTimeoutId) clearTimeout(heartbeatTimeoutId);
+    heartbeatTimeoutId = setTimeout(() => {
+        if (socket.connected && Date.now() - lastHeartbeatAt >= HEARTBEAT_INTERVAL_MS) {
+            socket.disconnect();
+            scheduleSocketReconnect();
+        }
+    }, HEARTBEAT_INTERVAL_MS * 2);
 }
 
 function startHeartbeatLoop() {
@@ -257,7 +280,7 @@ function setupPeer() {
             call.answer(localStream);
             call.on('stream', (stream) => {
                 remoteVideo.srcObject = stream;
-                remoteVideo.play().catch(() => {});
+                remoteVideo.play().catch((error) => console.warn('Riproduzione video remoto bloccata:', error));
             });
             call.on('close', () => {
                 if (activePeerCall === call) activePeerCall = null;
@@ -279,7 +302,20 @@ function setupPeer() {
 
     peer.on('error', (error) => {
         console.error('PeerJS error:', error);
+        destroyPeerSession();
     });
+}
+
+function destroyPeerSession() {
+    if (activePeerCall) {
+        activePeerCall.close();
+        activePeerCall = null;
+    }
+    if (peer) {
+        peer.destroy();
+        peer = null;
+    }
+    stopLocalMedia();
 }
 
 async function startCallIfNeeded() {
@@ -300,7 +336,7 @@ async function startCallIfNeeded() {
     activePeerCall = call;
     call.on('stream', (stream) => {
         remoteVideo.srcObject = stream;
-        remoteVideo.play().catch(() => {});
+        remoteVideo.play().catch((error) => console.warn('Riproduzione video remoto bloccata:', error));
     });
     call.on('close', () => {
         if (activePeerCall === call) activePeerCall = null;
@@ -430,6 +466,7 @@ socket.on('db-unavailable', () => {
 
 socket.on('disconnect', (reason) => {
     stopHeartbeatLoop();
+    destroyPeerSession();
     if (authRevoked) return;
     if (reason === 'io server disconnect') {
         scheduleSocketReconnect();
@@ -438,6 +475,7 @@ socket.on('disconnect', (reason) => {
 
 endCallBtn.addEventListener('click', () => {
     socket.emit('end-call');
+    destroyPeerSession();
     window.location.href = '/';
 });
 
@@ -450,8 +488,7 @@ msgInput.addEventListener('keydown', (event) => {
 
 window.addEventListener('beforeunload', () => {
     stopHeartbeatLoop();
-    if (activePeerCall) activePeerCall.close();
-    stopLocalMedia();
+    destroyPeerSession();
 });
 
 connectSocketAuthenticated();

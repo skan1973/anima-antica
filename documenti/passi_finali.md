@@ -20,6 +20,11 @@ Audit eseguito sul repository alla data del 2026-09-06.
 - ✅ Il frontend statico viene servito da Express.
 - ✅ Le route `/api/health/token-registry` e `/api/metrics` rispondono correttamente in smoke test locale.
 - ✅ `npm run test:unit` ora usa `tests/*.test.js`: 24 test, 23 passati e 1 skipped senza Redis.
+- ✅ I timer globali di cleanup/watchdog non bloccano più la suite.
+- ✅ Il frontend non mette più `callToken` nella query string: usa una chiave temporanea in `sessionStorage` e pulisce l'URL.
+- ✅ Cleanup PeerJS/media stream, jitter di riconnessione e timeout heartbeat aggiunti.
+- ✅ Shutdown coordinato di HTTP, Socket.IO, MongoDB, Redis e timer aggiunto.
+- ✅ Docker healthcheck e hardening Nginx per HTTPS/WebSocket aggiunti.
 - ✅ `signalData` non accetta più payload arbitrari: sono stati aggiunti schemi SDP, ICE e controllo.
 - ✅ `BCRYPT_ROUNDS` è limitato all'intervallo 10-14, con default 12.
 - ✅ È presente `server/.env.example` senza segreti reali.
@@ -192,10 +197,12 @@ Imporre lunghezze massime su SDP, candidate, `roomId` e campi metadata. Rifiutar
 - header `Referer`;
 - screenshot o link copiati.
 
+La correzione locale è stata applicata: il frontend usa una chiave temporanea in `sessionStorage`, rimuove il parametro dalla barra degli indirizzi e cancella il record dopo la lettura. Per una protezione ancora più forte resta da valutare un handshake server-side con cookie `HttpOnly`, `Secure`, `SameSite=Strict`.
+
 Per una correzione progressiva a basso costo:
 
-1. usare un identificatore di sessione breve e monouso nell'URL;
-2. conservare i dati sensibili in `sessionStorage` con scadenza e pulizia;
+1. mantenere l'identificatore breve e monouso non sensibile nell'URL;
+2. mantenere la scadenza e la pulizia di `sessionStorage`;
 3. impedire il caricamento di risorse di terze parti nella pagina chat;
 4. non loggare query string complete;
 5. valutare in seguito un handshake server-side con cookie `HttpOnly`, `Secure`, `SameSite=Strict`.
@@ -296,10 +303,10 @@ Con HTTPS e webcam reale verificare manualmente:
 
 ### 3.2 Correzioni frontend da completare
 
-- chiamare `peer.destroy()` e fermare tutti i MediaStream track su chiusura, errore e logout;
-- gestire esplicitamente fallimenti di `video.play()`;
-- aggiungere jitter alla riconnessione per evitare richieste simultanee;
-- impostare timeout per heartbeat e rilevare socket mezzo-aperti;
+- ~~chiamare `peer.destroy()` e fermare tutti i MediaStream track su chiusura, errore e logout.~~ Completato localmente.
+- ~~gestire esplicitamente fallimenti di `video.play()`.~~ Completato localmente.
+- ~~aggiungere jitter alla riconnessione per evitare richieste simultanee.~~ Completato localmente.
+- ~~impostare timeout per heartbeat e rilevare socket mezzo-aperti.~~ Completato localmente.
 - validare i parametri della chat prima di inizializzare PeerJS;
 - rendere configurabile il path PeerJS, mantenendo `/peerjs/myapp` coerente con Nginx;
 - evitare asset CDN esterni non necessari, soprattutto nella pagina autenticata;
@@ -716,7 +723,7 @@ Non inviare nei log token, password, URI completi, snapshot, SDP completi o dati
 ### Prima della finestra di rilascio
 
 - [ ] Branch/tag di release creato.
-- [ ] Tutti i test automatici passano e contano realmente i test.
+- [x] Tutti i test automatici passano e contano realmente i test: 23 passati, 1 skipped senza Redis.
 - [x] Audit npm rivisto dopo l'override `qs`: 0 vulnerabilità rilevate.
 - [ ] Backup MongoDB verificato e restore provato.
 - [ ] VPS aggiornata e firewall attivo.
@@ -760,10 +767,10 @@ Se health, login o chiamate falliscono:
 ## 12. Ordine pratico finale, senza ambiguità
 
 1. ~~Correggere static file e route health/metrics.~~ Completato localmente; ripetere lo smoke test dopo il deploy.
-2. ~~Correggere lo script `test:unit`.~~ Completato; resta da isolare la terminazione dei test.
+2. ~~Correggere lo script `test:unit`.~~ Completato; la suite termina automaticamente.
 3. Risolvere o accettare formalmente le vulnerabilità `npm audit`.
 4. ~~Implementare schema WebRTC al posto di `z.any()`.~~ Completato localmente; aggiungere ulteriori casi di abuso.
-5. Rimuovere token sensibili dalle query string.
+5. ~~Rimuovere token sensibili dalle query string.~~ Completato localmente; valutare in futuro cookie HttpOnly.
 6. ~~Validare `BCRYPT_ROUNDS` e creare il template env.~~ Completato localmente; verificare ancora la configurazione Redis dinamica.
 7. Creare `.env.example` documentale e secret checklist.
 8. Configurare MongoDB Atlas con TLS, utente minimo e backup.

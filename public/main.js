@@ -34,6 +34,8 @@ let authRevoked = false;
 let dbOutageAlertShown = false;
 let heartbeatIntervalId = null;
 const HEARTBEAT_INTERVAL_MS = 30000;
+let heartbeatTimeoutId = null;
+let lastHeartbeatAt = 0;
 
 let turnConfig = null; // Variabile per memorizzare la configurazione TURN + WebRTC
 
@@ -46,7 +48,8 @@ function scheduleSocketReconnect() {
         return;
     }
 
-    const delayMs = Math.min(1000 * (2 ** Math.min(reconnectAttempt, 5)), 10000);
+    const baseDelayMs = Math.min(1000 * (2 ** Math.min(reconnectAttempt, 5)), 10000);
+    const delayMs = Math.round(baseDelayMs * (0.75 + Math.random() * 0.5));
     reconnectAttempt += 1;
     reconnectTimerId = setTimeout(() => {
         reconnectTimerId = null;
@@ -109,11 +112,21 @@ function stopHeartbeatLoop() {
     if (!heartbeatIntervalId) return;
     clearInterval(heartbeatIntervalId);
     heartbeatIntervalId = null;
+    if (heartbeatTimeoutId) clearTimeout(heartbeatTimeoutId);
+    heartbeatTimeoutId = null;
 }
 
 function sendHeartbeat() {
     if (!socket || !socket.connected || authRevoked) return;
+    lastHeartbeatAt = Date.now();
     socket.emit('ping');
+    if (heartbeatTimeoutId) clearTimeout(heartbeatTimeoutId);
+    heartbeatTimeoutId = setTimeout(() => {
+        if (socket?.connected && Date.now() - lastHeartbeatAt >= HEARTBEAT_INTERVAL_MS) {
+            socket.disconnect();
+            scheduleSocketReconnect();
+        }
+    }, HEARTBEAT_INTERVAL_MS * 2);
 }
 
 function startHeartbeatLoop() {
@@ -123,14 +136,16 @@ function startHeartbeatLoop() {
 }
 
 function openPrivateChatPage({ roomId, callToken, role, nick, remoteNick }) {
-    const params = new URLSearchParams({
+    const sessionKey = `anima-chat-${crypto.randomUUID()}`;
+    sessionStorage.setItem(sessionKey, JSON.stringify({
         roomId,
         callToken,
         role,
         nick,
-        remoteNick: remoteNick || ''
-    });
-    window.location.href = `/chat.html?${params.toString()}`;
+        remoteNick: remoteNick || '',
+        createdAt: Date.now()
+    }));
+    window.location.href = `/chat.html?session=${encodeURIComponent(sessionKey)}`;
 }
 
 function getCountryCode() {

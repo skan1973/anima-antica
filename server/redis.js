@@ -312,11 +312,21 @@ const scanKeys = async (pattern) => {
   return keys;
 };
 
+const closeRedis = async () => {
+  const clients = [pubClient, subClient].filter(Boolean);
+  await Promise.all(clients.map(async (client) => {
+    if (client.status === 'ready' || client.status === 'connecting') {
+      await client.quit().catch(() => client.disconnect());
+    }
+  }));
+};
+
 module.exports = {
   pubClient,
   subClient,
   isRedisReady,
   scanKeys,
+  closeRedis,
   redisUrl,
   // Nuove API Resilienti
   resilientSet,

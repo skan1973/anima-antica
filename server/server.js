@@ -31,7 +31,7 @@ const {
   getHealthStatus
 } = require('./tokenRegistry');
 const { getMetrics } = require('./metrics');
-const { connectDB, isDbReady, getDbStatus } = require('./db');
+const { connectDB, isDbReady, getDbStatus, closeDB } = require('./db');
 const { jwtSecret } = require('./config');
 const tokenInvalidator = require('./services/tokenInvalidator');
 const redisService = require('./redis');
@@ -811,5 +811,31 @@ const startServer = async () => {
     process.exit(1);
   }
 };
+
+let shutdownInProgress = false;
+const shutdown = async (signal) => {
+  if (shutdownInProgress) return;
+  shutdownInProgress = true;
+  writeLog('info', 'bootstrap.shutdown.started', { signal });
+  clearInterval(dbMonitorTimer);
+  clearTimeout(initialDbMonitorTimer);
+
+  await new Promise((resolve) => {
+    io.close(() => resolve());
+  });
+  await new Promise((resolve) => {
+    server.close(() => resolve());
+  }).catch(() => {});
+  await closeDB().catch((error) => captureError('shutdown.db.close_failed', error));
+  await redisService.closeRedis().catch((error) => captureError('shutdown.redis.close_failed', error));
+  writeLog('info', 'bootstrap.shutdown.completed');
+};
+
+process.once('SIGTERM', () => {
+  shutdown('SIGTERM').finally(() => process.exit(0));
+});
+process.once('SIGINT', () => {
+  shutdown('SIGINT').finally(() => process.exit(0));
+});
 
 startServer();
