@@ -1,4 +1,9 @@
-﻿ANIMA_ANTICA/
+## Albero verificato
+
+Struttura rilevata nel workspace, con `.git/` e `node_modules/` escluse.
+
+```text
+ANIMA_ANTICA/
 ├── .dockerignore
 ├── .github/
 │   ├── evals/
@@ -92,9 +97,17 @@
 ├── test.txt
 ├── test_cors.js
 └── tests/
-	├── banService.test.js
-	├── README.md
-	├── schemas.test.js
-	├── stateRecovery.test.js
-	└── stateService.test.js
+    ├── banService.test.js
+    ├── README.md
+    ├── schemas.test.js
+    ├── stateRecovery.test.js
+    └── stateService.test.js
+```
 
+### Verifica
+
+- File elencati: 79
+- Directory elencate: 19
+- Escluse: `.git/` e `node_modules/`
+- File o directory non elencati per troncamento: nessuno rilevato
+- Collegamenti simbolici: non verificati
